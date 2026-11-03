@@ -6,6 +6,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: make test
+      - name: Preparar entrega
+        run: |
+          make zip
+          mkdir -p work/entrega
+          python3 -m zipfile -e komikan-concurrente.zip work/entrega
+      - uses: actions/upload-artifact@v4
+        with:
+          name: komikan-concurrente
+          path: work/entrega/
+          include-hidden-files: true
+          if-no-files-found: error
   sanitizers:
     runs-on: ubuntu-latest
     steps:

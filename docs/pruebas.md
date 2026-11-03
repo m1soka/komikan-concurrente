@@ -87,9 +87,15 @@ ASAN_OPTIONS=detect_leaks=1 ./torneo 12 2
 # En la tercera ejecución, enviar Ctrl+C después de observar varias mesas.
 ```
 
-GitHub Actions está configurado para compilar, probar y repetir un escenario con
-LeakSanitizer en Ubuntu. La presencia del workflow no significa que la ejecución
-remota haya pasado; su estado se consulta en el PR.
+GitHub Actions también se ejecutó realmente sobre el commit inicial del PR:
+[ejecución 41734201956](https://github.com/m1soka/komikan-concurrente/actions/runs/41734201956).
+Los jobs `test` y `sanitizers` finalizaron con `success`, incluido el paso
+`Comprobar fugas en escenario de cierre normal` con
+`ASAN_OPTIONS=detect_leaks=1 ./torneo 100 4 configs/asedio.txt`. Esto verifica ese
+escenario en Ubuntu remoto; la limitación de ptrace sigue aplicando al entorno
+local y no se extrapola a todos los escenarios. El workflow además genera un
+ZIP descargable como artefacto. La evidencia de los estados consultados está
+en `evidencia/ci.txt`.
 
 ## Alcance de la evidencia
 
@@ -109,3 +115,13 @@ El PDF final se verificó con `pdfinfo`: **2 páginas A4**. El ZIP contiene fuen
 configuraciones, pruebas, documentación, evidencia y manifiesto SHA-256; no contiene
 objetos, ejecutables, `.git` ni archivos de trabajo. Su extracción y compilación
 se registran en `evidencia/paquete.txt` al completar el empaquetado.
+
+## Ubicación y acceso a los entregables
+
+La carpeta de proyecto y el ZIP existen en el repositorio conectado. El destino
+local de descargas indicado por el cliente (`/codex/browser/.../output`) no existe
+en este ejecutor y su raíz no permite escritura; se intentó crearlo y el sistema
+respondió `Permission denied`. Por eso la entrega descargable se publica como
+artefacto de GitHub Actions, accesible desde el PR. La descarga del repositorio
+privado requiere la sesión de GitHub del usuario. No se presenta un enlace local
+a un archivo inexistente.

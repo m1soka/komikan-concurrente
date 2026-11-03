@@ -20,5 +20,6 @@ Validación real:
 
 LeakSanitizer no pudo verificar fugas: su runtime informa incompatibilidad con
 ptrace. No se certifica cero fugas. Los detalles, interpretaciones del diagrama y
-límites de verificación están en docs/pruebas.md y docs/requisitos.md. La ejecución
-de GitHub Actions es independiente de los resultados locales documentados.
+límites de verificación están en docs/pruebas.md y docs/requisitos.md. GitHub Actions también pasó los jobs test y sanitizers en la ejecución
+41734201956, incluido un escenario de 100 clientes con LeakSanitizer activo.
+El workflow publica el ZIP como artefacto descargable del PR.

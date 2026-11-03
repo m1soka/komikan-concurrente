@@ -190,3 +190,11 @@ distintas.
 
 El repositorio contiene fuentes y documentación. Los ejecutables, objetos y
 archivos temporales se excluyen mediante `.gitignore`; se reconstruyen con Make.
+
+## Descargar la entrega
+
+El workflow «Compilar y probar» genera el artefacto **komikan-concurrente**.
+En la ejecución de GitHub Actions del PR, la sección Artifacts permite descargar
+`komikan-concurrente.zip`, con fuentes, pruebas, documentación y manifiesto SHA-256.
+La descarga de este repositorio privado requiere iniciar sesión en GitHub.
+También puedes generar exactamente el paquete local mediante `make zip`.

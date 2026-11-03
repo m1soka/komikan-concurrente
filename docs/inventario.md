@@ -14,6 +14,7 @@ configs/llegadas_lentas.txt
 docs/defensa.md
 docs/evidencia/asan-make.txt
 docs/evidencia/asan.txt
+docs/evidencia/ci.txt
 docs/evidencia/lsan.txt
 docs/evidencia/natural.txt
 docs/evidencia/normal.txt
