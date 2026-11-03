@@ -10,10 +10,24 @@ README.md
 configs/abandono.txt
 configs/asedio.txt
 configs/ejemplo.txt
+configs/fallo_cliente.txt
+configs/fallo_pieza.txt
 configs/llegadas_lentas.txt
+docs/auditoria.md
 docs/defensa.md
 docs/evidencia/asan-make.txt
 docs/evidencia/asan.txt
+docs/evidencia/audit-asan.txt
+docs/evidencia/audit-build.txt
+docs/evidencia/audit-integration.txt
+docs/evidencia/audit-lsan.txt
+docs/evidencia/audit-natural-final.txt
+docs/evidencia/audit-natural.txt
+docs/evidencia/audit-normal.txt
+docs/evidencia/audit-paquete.txt
+docs/evidencia/audit-test.txt
+docs/evidencia/audit-tsan.txt
+docs/evidencia/auditoria-tablero.txt
 docs/evidencia/ci.txt
 docs/evidencia/lsan.txt
 docs/evidencia/natural.txt
@@ -42,6 +56,7 @@ src/main.c
 src/queue.c
 src/signals.c
 src/tournament.c
+tests/README.md
 tests/fail_pthread_create.c
 tests/test_board.c
 tests/test_config_queue.c
@@ -53,7 +68,7 @@ tools/package.py
 
 ## Productos compilados y ejecutados
 
-- `torneo`: ocho módulos C compilados y enlazados; 12 grupos de integración.
+- `torneo`: ocho módulos C compilados y enlazados; 22 grupos de integración.
 - `build/test_board`: compilado y ejecutado.
 - `build/test_config_queue`: compilado y ejecutado.
 - `build/test_game`: compilado y ejecutado.

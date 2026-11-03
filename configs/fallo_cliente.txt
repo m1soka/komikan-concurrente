@@ -1,0 +1,5 @@
+# Salida inesperada con pthread_exit mientras el cliente posee su mutex.
+# Un cleanup handler libera únicamente el mutex poseído y notifica al juez.
+fail_player = 1
+fail_after_ms = 100
+fail_mode = client_exit_locked

@@ -1,25 +1,37 @@
-# Implementar torneo de Komikan concurrente completo en C17
+# Implementar y auditar Komikan Concurrente en C17
 
-El repositorio inicial solo contenía un README. Esta entrega incorpora el torneo
-con clientes locales concurrentes, cola FIFO, hasta M mesas, juez por partida y
-13 hilos de piezas. El tablero sigue las 28 posiciones marcadas en el PDF y cada
-mesa valida intenciones bajo su propio mutex. Incluye abandono cooperativo y
-cierre mediante sigwait, notificación y join.
+El repositorio inicial solo contenía un README. La entrega incorpora el torneo
+completo: N clientes locales, emparejamiento FIFO, hasta M mesas, un juez por
+partida y trece piezas concurrentes. Mantiene un mutex por tablero, condiciones
+para espera pasiva, configuración estricta, logs y cierre mediante sigwait.
 
-Se agregan ocho fuentes C, siete encabezados, Makefile, configuraciones, pruebas,
-.gitignore, CI, informe PDF de dos páginas, trazabilidad y defensa oral con veinte
-preguntas. El empaquetador produce un ZIP de fuentes con manifiesto SHA-256.
+La auditoría corrige cuatro problemas: salida inesperada sin cleanup, tablero
+inicializado por el emparejador, topes arbitrarios 1024/64 y bloqueo tardío de
+SIGINT. Ahora el juez inicializa el tablero y adjudica fallos de participantes;
+cleanup handlers liberan solo mutexes propios; los límites derivan de aritmética
+y recursos; el receptor de señales precede a configuración y reservas. También
+se corrige aceptación parcial de NUL en configuración. Las primitivas del slot
+se conservan hasta que no quedan usuarios, sin reinicialización por partida.
 
-Validación real:
+Se preservó la lógica correcta de tablero y FIFO. Se verificaron las 28 posiciones,
+48 aristas y 70 capturas dirigidas contra el diagrama, conservando explícita la
+interpretación del salto central del trono. La matriz completa está en
+`docs/requisitos.md` y los hallazgos en `docs/auditoria.md`.
 
-- `make clean && make test`: compilación GCC C17 sin avisos, tres ejecutables unitarios y 12 grupos de integración aprobados; incluye diez fallos inyectados de pthread_create.
-- Carga de 100 clientes, reutilización y hasta cuatro partidas simultáneas; abandono y SIGINT antes del emparejamiento y con partidas/cola activas.
-- Partida predeterminada completa: victoria del Puma con seis capturas y 13 piezas unidas.
-- `make asan` y `make tsan`: aprobados; 11 grupos de integración compatibles y uno omitido explícitamente por inyección LD_PRELOAD, además de todos los unitarios.
-- PDF verificado con dos páginas; ZIP extraído, hashes comprobados y fuentes compiladas/probadas desde la extracción.
+Validación local ejecutada:
 
-LeakSanitizer no pudo verificar fugas: su runtime informa incompatibilidad con
-ptrace. No se certifica cero fugas. Los detalles, interpretaciones del diagrama y
-límites de verificación están en docs/pruebas.md y docs/requisitos.md. GitHub Actions también pasó los jobs test y sanitizers en la ejecución
-41734201956, incluido un escenario de 100 clientes con LeakSanitizer activo.
-El workflow publica el ZIP como artefacto descargable del PR.
+- `make clean && make`: ocho módulos C17 sin advertencias.
+- `make test`: tres unitarios y 22/22 grupos de integración; además integración independiente 22/22.
+- 2/10/100/200 clientes, reciclaje, FIFO, ocupación ≤ M, ENOMEM, fallos de creación/inicialización, abandono y salidas inesperadas.
+- SIGINT con barreras en inicio, inicialización parcial y configuración, además de llegadas, mesas ocupadas y 200 clientes. Las señales anteriores al bloqueo inicial se clasifican por separado.
+- `make asan` y `make tsan`: unitarios completos y 17 grupos aprobados, cinco omitidos explícitamente por LD_PRELOAD/RLIMIT_AS; sin reportes en las ejecuciones compatibles.
+- Partida predeterminada con seis capturas y trece piezas unidas. PDF regenerado de dos páginas; ZIP con manifiesto SHA-256 y sin compilados/temporales.
+
+LeakSanitizer local no puede verificar fugas bajo ptrace. El workflow actualizado
+lo ejecuta en Ubuntu sobre unitarios e integración compatible, incluidos fallos
+y SIGINT; su commit y resultado se verifican en Actions antes de cerrar la
+auditoría. No se promete recuperación de SIGSEGV, SIGKILL, corrupción, cancelación
+asíncrona ni cantidades ilimitadas de hilos. `docs/pruebas.md` separa resultados,
+omisiones y límites.
+
+Este PR queda abierto para revisión; no se fusiona automáticamente con main.

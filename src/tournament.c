@@ -3,7 +3,9 @@
 #include "log.h"
 #include "queue.h"
 #include "signals.h"
+#include <limits.h>
 #include <errno.h>
+#include <stdint.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -15,7 +17,7 @@ typedef struct {
     tournament_t *tournament;
     pthread_t thread;
     size_t id, arrival_order;
-    bool assigned, done;
+    bool assigned, done, registered, failed;
     game_t *game;
 } client_t;
 typedef enum { SLOT_FREE, SLOT_RUNNING, SLOT_FINISHED } slot_state_t;
@@ -30,24 +32,27 @@ struct tournament {
     pthread_cond_t changed;
     config_t config;
     size_t n, limit, slots_count, created, arrived;
-    size_t active, peak, matches, completed;
+    size_t active, peak, matches, completed, failed_before_arrival;
     bool creation_done, stop, interrupted, fatal;
     queue_t waiting;
     client_t *clients;
     slot_t *slots;
 };
 
-static struct timespec deadline_ms(size_t milliseconds)
+static bool deadline_ms(size_t milliseconds, struct timespec *deadline)
 {
-    struct timespec deadline;
-    (void)clock_gettime(CLOCK_MONOTONIC, &deadline);
-    deadline.tv_sec += (time_t)(milliseconds / 1000);
-    deadline.tv_nsec += (long)(milliseconds % 1000) * 1000000L;
-    if (deadline.tv_nsec >= 1000000000L) {
-        deadline.tv_sec++;
-        deadline.tv_nsec -= 1000000000L;
-    }
-    return deadline;
+    if (clock_gettime(CLOCK_MONOTONIC, deadline) != 0 || deadline->tv_sec < 0)
+        return false;
+    uintmax_t maximum = (time_t)-1 > 0 ? (uintmax_t)(time_t)-1
+        : UINTMAX_MAX >> (sizeof(uintmax_t) * CHAR_BIT - sizeof(time_t) * CHAR_BIT + 1);
+    uintmax_t seconds = milliseconds / 1000;
+    long nanos = deadline->tv_nsec + (long)(milliseconds % 1000) * 1000000L;
+    if (nanos >= 1000000000L) { seconds++; nanos -= 1000000000L; }
+    if ((uintmax_t)deadline->tv_sec > maximum || seconds > maximum - (uintmax_t)deadline->tv_sec)
+        return false;
+    deadline->tv_sec = (time_t)((uintmax_t)deadline->tv_sec + seconds);
+    deadline->tv_nsec = nanos;
+    return true;
 }
 /* Never nests the tournament lock with a board or output lock. */
 static void request_stop(tournament_t *tournament, bool interrupted, bool fatal)
@@ -65,64 +70,148 @@ static void on_interrupt(void *context)
     log_event("SERVIDOR SIGINT recibido; cierre cooperativo");
 }
 
-static void *client_run(void *argument)
+typedef struct {
+    client_t *client;
+    bool mutex_owned;
+    bool normal_return;
+} client_cleanup_t;
+
+static void client_lock(client_cleanup_t *cleanup)
 {
-    client_t *client = argument;
+    pthread_mutex_lock(&cleanup->client->tournament->mutex);
+    cleanup->mutex_owned = true;
+}
+
+static void client_unlock(client_cleanup_t *cleanup)
+{
+    pthread_mutex_unlock(&cleanup->client->tournament->mutex);
+    cleanup->mutex_owned = false;
+}
+
+/* Cancellation is disabled in clients. pthread_exit still runs this handler.
+   It knows whether this very thread owns the mutex; it never unlocks another
+   thread's mutex or attempts to recover a partially modified board. */
+static void client_cleanup(void *argument)
+{
+    client_cleanup_t *cleanup = argument;
+    client_t *client = cleanup->client;
     tournament_t *tournament = client->tournament;
-    struct timespec arrival = deadline_ms((client->id - 1) *
-                                         tournament->config.arrival_delay_ms);
-    pthread_mutex_lock(&tournament->mutex);
-    int error = 0;
-    if (tournament->config.arrival_delay_ms > 0) {
-        while (!tournament->stop && error != ETIMEDOUT) {
-            error = pthread_cond_timedwait(&tournament->changed, &tournament->mutex, &arrival);
-            if (error != 0 && error != ETIMEDOUT) {
-                tournament->stop = tournament->fatal = true;
-                pthread_cond_broadcast(&tournament->changed);
-                break;
+    game_t *game = NULL;
+    bool failed = false;
+    if (!cleanup->normal_return) {
+        if (!cleanup->mutex_owned) client_lock(cleanup);
+        if (!client->done && !tournament->stop) {
+            client->failed = client->done = true;
+            failed = true;
+            if (!client->registered) tournament->failed_before_arrival++;
+            if (client->assigned) game = client->game;
+            else {
+                /* Preserve the relative FIFO order of every other client. */
+                size_t count = queue_size(&tournament->waiting), id;
+                for (size_t index = 0; index < count; index++) {
+                    (void)queue_pop(&tournament->waiting, &id);
+                    if (id != client->id) (void)queue_push(&tournament->waiting, id);
+                }
             }
+            pthread_cond_broadcast(&tournament->changed);
         }
     }
+    if (cleanup->mutex_owned) client_unlock(cleanup);
+    if (failed) log_event("FALLO_CLIENTE jugador=%zu tipo=pthread_exit", client->id);
+    if (game != NULL) game_participant_failed(game, client->id);
+}
+
+static int client_wait(client_cleanup_t *cleanup, const struct timespec *deadline)
+{
+    tournament_t *tournament = cleanup->client->tournament;
+    int error = deadline ? pthread_cond_timedwait(&tournament->changed, &tournament->mutex, deadline)
+                         : pthread_cond_wait(&tournament->changed, &tournament->mutex);
+    if (error != 0 && error != ETIMEDOUT) {
+        tournament->stop = tournament->fatal = true;
+        pthread_cond_broadcast(&tournament->changed);
+    }
+    return error;
+}
+
+static void client_body(client_cleanup_t *cleanup)
+{
+    client_t *client = cleanup->client;
+    tournament_t *tournament = client->tournament;
+    struct timespec arrival;
+    if (!deadline_ms((client->id - 1) * tournament->config.arrival_delay_ms, &arrival)) {
+        request_stop(tournament, false, true);
+        return;
+    }
+    client_lock(cleanup);
+    int error = 0;
+    if (tournament->config.arrival_delay_ms > 0) {
+        while (!tournament->stop && error != ETIMEDOUT)
+            error = client_wait(cleanup, &arrival);
+    }
     if (tournament->stop) {
-        pthread_mutex_unlock(&tournament->mutex);
-        return NULL;
+        client_unlock(cleanup);
+        return;
     }
     if (!queue_push(&tournament->waiting, client->id)) {
         tournament->stop = tournament->fatal = true;
         pthread_cond_broadcast(&tournament->changed);
-        pthread_mutex_unlock(&tournament->mutex);
-        return NULL;
+        client_unlock(cleanup);
+        return;
     }
+    client->registered = true;
     client->arrival_order = ++tournament->arrived;
     pthread_cond_broadcast(&tournament->changed);
-    pthread_mutex_unlock(&tournament->mutex);
+    client_unlock(cleanup);
     log_event("LLEGADA jugador=%zu orden=%zu", client->id, client->arrival_order);
-    pthread_mutex_lock(&tournament->mutex);
+    client_lock(cleanup);
     while (!client->assigned && !client->done && !tournament->stop)
-        pthread_cond_wait(&tournament->changed, &tournament->mutex);
+        (void)client_wait(cleanup, NULL);
     if (client->assigned && !client->done && !tournament->stop &&
         tournament->config.fail_player == client->id) {
-        struct timespec failure = deadline_ms(tournament->config.fail_after_ms);
-        error = 0;
-        while (!client->done && !tournament->stop && error != ETIMEDOUT) {
-            error = pthread_cond_timedwait(&tournament->changed, &tournament->mutex, &failure);
-            if (error != 0 && error != ETIMEDOUT) {
-                tournament->stop = tournament->fatal = true;
-                pthread_cond_broadcast(&tournament->changed);
-                break;
-            }
+        struct timespec failure;
+        if (!deadline_ms(tournament->config.fail_after_ms, &failure)) {
+            tournament->stop = tournament->fatal = true;
+            pthread_cond_broadcast(&tournament->changed);
+            client_unlock(cleanup);
+            return;
         }
+        error = 0;
+        while (!client->done && !tournament->stop && error != ETIMEDOUT)
+            error = client_wait(cleanup, &failure);
         if (!client->done && !tournament->stop && error == ETIMEDOUT) {
             game_t *game = client->game;
-            pthread_mutex_unlock(&tournament->mutex);
-            log_event("ABANDONO jugador=%zu", client->id);
-            game_abandon(game, client->id);
-            pthread_mutex_lock(&tournament->mutex);
+            failure_mode_t mode = tournament->config.fail_mode;
+            if (mode == FAIL_CLIENT_EXIT_LOCKED) pthread_exit(NULL);
+            client_unlock(cleanup);
+            if (mode == FAIL_CLIENT_EXIT_UNLOCKED) pthread_exit(NULL);
+            if (mode == FAIL_ABANDON) {
+                log_event("ABANDONO jugador=%zu", client->id);
+                game_abandon(game, client->id);
+            } else {
+                game_failure_mode_t piece_mode = mode == FAIL_PIECE_EXIT_LOCKED ? GAME_FAIL_EXIT_LOCKED
+                    : mode == FAIL_PIECE_EXIT_UNLOCKED ? GAME_FAIL_EXIT_UNLOCKED : GAME_FAIL_CANCEL_WAIT;
+                (void)game_inject_piece_failure(game, client->id, piece_mode);
+            }
+            client_lock(cleanup);
         }
     }
     while (!client->done && !tournament->stop)
-        pthread_cond_wait(&tournament->changed, &tournament->mutex);
-    pthread_mutex_unlock(&tournament->mutex);
+        (void)client_wait(cleanup, NULL);
+    client_unlock(cleanup);
+}
+
+static void *client_run(void *argument)
+{
+    /* No asynchronous cancellation and no forced cancellation of clients.
+       Controlled pthread_exit is handled before the thread can disappear. */
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+    client_cleanup_t cleanup = {.client = argument};
+    pthread_cleanup_push(client_cleanup, &cleanup);
+    client_body(&cleanup);
+    if (!cleanup.mutex_owned) client_lock(&cleanup);
+    cleanup.normal_return = cleanup.client->done || cleanup.client->tournament->stop;
+    client_unlock(&cleanup);
+    pthread_cleanup_pop(1);
     return NULL;
 }
 
@@ -148,6 +237,7 @@ static void on_game_finished(void *context, game_t *game, int winner, const char
 static void *matchmaker_run(void *argument)
 {
     tournament_t *tournament = argument;
+    pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
     bool notified_stop = false;
     pthread_mutex_lock(&tournament->mutex);
     for (;;) {
@@ -219,11 +309,14 @@ static void *matchmaker_run(void *argument)
             client_t *dogs = &tournament->clients[second - 1];
             puma->assigned = dogs->assigned = true;
             puma->game = dogs->game = &slot->game;
+            bool puma_failed = puma->failed, dogs_failed = dogs->failed;
             pthread_cond_broadcast(&tournament->changed);
             pthread_mutex_unlock(&tournament->mutex);
             log_event("PAREJA partida=%zu mesa=%zu puma=%zu perros=%zu ordenes=%zu,%zu activas=%zu",
                       slot->match, available + 1, first, second,
                       puma->arrival_order, dogs->arrival_order, active);
+            if (puma_failed) game_participant_failed(&slot->game, first);
+            if (dogs_failed) game_participant_failed(&slot->game, second);
             int error = pthread_create(&slot->judge, NULL, game_run, &slot->game);
             if (error != 0) {
                 log_event("ERROR juez pthread_create=%s", strerror(error));
@@ -240,7 +333,7 @@ static void *matchmaker_run(void *argument)
             continue;
         }
         bool all_arrived = tournament->creation_done &&
-                           tournament->arrived == tournament->created;
+                           tournament->arrived + tournament->failed_before_arrival == tournament->created;
         if (!tournament->stop && all_arrived && queue_size(&tournament->waiting) == 1) {
             size_t odd;
             (void)queue_pop(&tournament->waiting, &odd);
@@ -254,29 +347,45 @@ static void *matchmaker_run(void *argument)
         if (tournament->creation_done && tournament->active == 0 &&
             (tournament->stop || (all_arrived && queue_size(&tournament->waiting) == 0)))
             break;
-        pthread_cond_wait(&tournament->changed, &tournament->mutex);
+        if (pthread_cond_wait(&tournament->changed, &tournament->mutex) != 0)
+            tournament->stop = tournament->fatal = true;
     }
     pthread_mutex_unlock(&tournament->mutex);
     return NULL;
 }
 
-int tournament_run(size_t players, size_t max_tables, const config_t *config)
+int tournament_run(size_t players, size_t max_tables, const config_t *config,
+                   signals_t *signals)
 {
     tournament_t tournament = {0};
     tournament.n = players;
     tournament.limit = max_tables;
     tournament.config = *config;
     tournament.slots_count = players / 2 < max_tables ? players / 2 : max_tables;
-    tournament.clients = calloc(players, sizeof(*tournament.clients));
-    tournament.slots = calloc(tournament.slots_count ? tournament.slots_count : 1,
-                              sizeof(*tournament.slots));
-    bool queue_ready = queue_init(&tournament.waiting, players);
-    bool mutex_ready = false, condition_ready = false;
+    if (players == 0 || max_tables == 0 ||
+        players > SIZE_MAX / sizeof(*tournament.clients) ||
+        tournament.slots_count > SIZE_MAX / sizeof(*tournament.slots) ||
+        players > SIZE_MAX / sizeof(size_t) ||
+        (config->arrival_delay_ms != 0 && players - 1 > SIZE_MAX / config->arrival_delay_ms)) {
+        log_event("ERROR capacidad: tamaños o plazos no representables");
+        return 2;
+    }
+    bool queue_ready = false, mutex_ready = false, condition_ready = false;
+    bool signals_bound = false;
     size_t initialized_games = 0;
     int result = 1;
-    signals_t signals = {0};
     pthread_t matcher;
-    if (!tournament.clients || !tournament.slots || !queue_ready) goto cleanup;
+    if (signals_interrupted(signals)) { result = 130; goto cleanup; }
+    tournament.clients = calloc(players, sizeof(*tournament.clients));
+    if (signals_interrupted(signals)) { result = 130; goto cleanup; }
+    if (!tournament.clients) goto cleanup;
+    tournament.slots = calloc(tournament.slots_count ? tournament.slots_count : 1,
+                              sizeof(*tournament.slots));
+    if (signals_interrupted(signals)) { result = 130; goto cleanup; }
+    if (!tournament.slots) goto cleanup;
+    queue_ready = queue_init(&tournament.waiting, players);
+    if (signals_interrupted(signals)) { result = 130; goto cleanup; }
+    if (!queue_ready) goto cleanup;
     if (pthread_mutex_init(&tournament.mutex, NULL) != 0) goto cleanup;
     mutex_ready = true;
     pthread_condattr_t attributes;
@@ -286,13 +395,15 @@ int tournament_run(size_t players, size_t max_tables, const config_t *config)
     pthread_condattr_destroy(&attributes);
     if (error != 0) goto cleanup;
     condition_ready = true;
-    for (; initialized_games < tournament.slots_count; initialized_games++)
+    /* The signal waiter has been alive since main, before config/allocation.
+       Binding applies any interruption already observed during startup. */
+    signals_bind(signals, on_interrupt, &tournament);
+    signals_bound = true;
+    for (; initialized_games < tournament.slots_count; initialized_games++) {
+        if (signals_interrupted(signals)) { result = 130; goto cleanup; }
         if (!game_init(&tournament.slots[initialized_games].game)) goto cleanup;
-    error = signals_start(&signals, on_interrupt, &tournament);
-    if (error != 0) {
-        log_event("ERROR señales pthread_create/mask=%s", strerror(error));
-        goto cleanup;
     }
+    if (signals_interrupted(signals)) { result = 130; goto cleanup; }
     error = pthread_create(&matcher, NULL, matchmaker_run, &tournament);
     if (error != 0) {
         log_event("ERROR emparejador pthread_create=%s", strerror(error));
@@ -321,18 +432,20 @@ int tournament_run(size_t players, size_t max_tables, const config_t *config)
     tournament.creation_done = true;
     pthread_cond_broadcast(&tournament.changed);
     pthread_mutex_unlock(&tournament.mutex);
-    (void)pthread_join(matcher, NULL);
+    bool join_failed = pthread_join(matcher, NULL) != 0;
     for (size_t index = 0; index < tournament.created; index++)
-        (void)pthread_join(tournament.clients[index].thread, NULL);
-    /* Join the signal waiter before reading flags or destroying its context. */
-    signals_finish(&signals);
+        if (pthread_join(tournament.clients[index].thread, NULL) != 0) join_failed = true;
+    /* Exclude callbacks before inspecting non-atomic flags or freeing context. */
+    signals_bind(signals, NULL, NULL);
+    signals_bound = false;
+    tournament.fatal |= join_failed;
     log_event("RESUMEN creados=%zu llegados=%zu partidas=%zu completadas=%zu pico_mesas=%zu limite=%zu en_cola=%zu",
               tournament.created, tournament.arrived, tournament.matches,
               tournament.completed, tournament.peak, tournament.limit,
               queue_size(&tournament.waiting));
     result = tournament.fatal ? 1 : tournament.interrupted ? 130 : 0;
 cleanup:
-    signals_finish(&signals);
+    if (signals_bound) signals_bind(signals, NULL, NULL);
     for (size_t index = 0; index < initialized_games; index++)
         game_destroy(&tournament.slots[index].game);
     if (condition_ready) pthread_cond_destroy(&tournament.changed);
@@ -340,6 +453,6 @@ cleanup:
     if (queue_ready) queue_destroy(&tournament.waiting);
     free(tournament.slots);
     free(tournament.clients);
-    if (result == 1) log_event("SERVIDOR error: recursos liberados tras fallo");
+    if (result == 1) log_event("SERVIDOR error: cierre tras fallo de recursos");
     return result;
 }

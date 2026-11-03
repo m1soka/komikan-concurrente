@@ -1,127 +1,137 @@
-# Verificación real de la entrega
+# Pruebas y auditoría final
 
-Ejecutada el 3 de noviembre de 2026 en Linux con GCC y Pthreads. Los resultados
-siguientes corresponden a procesos ejecutados, no solo a inspección de fuentes.
-Las salidas originales están en `docs/evidencia/`.
+Auditoría ejecutada el **3 de noviembre de 2026**. Esta revisión conserva la
+arquitectura modular y corrige los problemas descritos en `auditoria.md`.
+La matriz requisito → archivo/función → prueba está en `requisitos.md`.
+Los archivos `evidencia/audit-*` corresponden a esta revisión; los anteriores
+`normal.txt`, `asan-make.txt`, `tsan-make.txt`, `natural.txt` y `ci.txt` se conservan
+como evidencia histórica de la entrega inicial, no como prueba de código nuevo.
 
-## Compilación y suite normal
+## Compilación y suites ejecutadas
+
+| Comando real | Resultado | Evidencia |
+| --- | --- | --- |
+| `make clean && make` | Salida 0, ocho fuentes C y enlace sin advertencias, `gcc -Wall -Wextra -std=c17 -pthread` | `evidencia/audit-build.txt` |
+| `make test` | Salida 0; tres unitarios y **22/22 grupos de integración**, sin omisiones | `evidencia/audit-test.txt` |
+| `python3 tests/test_integration.py` | Salida 0, **22/22**; incluye barrera durante inicialización parcial de varias mesas | `evidencia/audit-integration.txt` |
+| `make asan` | Salida 0; ASan y UBSan sin reportes; unitarios completos y **17 grupos aprobados / 5 omitidos** | `evidencia/audit-asan.txt` |
+| `make tsan` | Salida 0; TSan sin reportes; unitarios completos y **17 grupos aprobados / 5 omitidos** | `evidencia/audit-tsan.txt` |
+
+Las cinco omisiones de cada suite sanitizada son explícitas: inyección de
+creación, memoria limitada, fallos de mutex, barreras de inicio y barrera de
+configuración. Dependen de `LD_PRELOAD` o `RLIMIT_AS`, que interfieren con los
+runtimes; esos mismos grupos **sí pasan en la suite normal**. La simulación de
+fallos de participantes continúa activa bajo sanitizadores.
+
+Al terminar se ejecutó nuevamente la compilación y suite normal, por lo que el
+`torneo` y los productos de `build/` del repositorio local son la versión normal.
+Se excluyen del ZIP mediante `.gitignore` y el empaquetador.
+
+## Reglas, topología y actividad real
+
+`test_board` pasa nueve grupos: compara los **784 pares de posiciones**, las
+**48 aristas** del dibujo y las **70 rutas de captura dirigidas**. Prueba seis
+capturas reales consecutivas, inmovilización, rechazo de saltos de Perros,
+trono, formato, 100 competencias de dos hilos por una casilla y 200 posiciones
+iniciales deterministas. En estas últimas ejecuta 39.127 jugadas y 634 capturas
+con comprobación de invariantes. La geometría del código se conservó porque no
+se encontró un error. Revisión visual y comandos adicionales en
+`evidencia/auditoria-tablero.txt`.
+
+`test_config_queue` prueba argumentos y overflow, claves/modos de fallo,
+configuración transaccional, cancelación de lectura, NUL embebido, longitud de
+línea, tipos de archivo y wrap de la FIFO. El parser admite archivos regulares;
+rechaza una FIFO sin escritor de forma inmediata para evitar bloquear el inicio.
+
+`test_game` verifica que el juez inicializa el tablero (`board_ready`), la
+reutilización del slot, abandono de ambos bandos, avisos tardíos y salida con
+actividad. Seis casos prueban fallos de piezas: ambos bandos × salida con mutex,
+salida sin mutex y cancelación diferida en condición. Se comprueba ganador,
+callback tras joins, invariantes y `pthread_mutex_trylock()` satisfactorio.
+
+También se ejecutó **`./torneo 2 1`** con disposición predeterminada: salida 0,
+402 intentos registrados, seis capturas, victoria natural del Puma y trece piezas
+unidas. Duró 7,429 s en esa ejecución; no es un benchmark ni una garantía de
+terminación aleatoria. `evidencia/audit-natural-final.txt` conserva el resumen y la
+comprobación posterior de `/proc/PID/task`.
+
+## Capacidad, FIFO, fallos y SIGINT
+
+La integración comprueba, entre otros casos:
+
+- **2, 10, 100 y 200 clientes**, con 1, 3, 4 y 8 mesas respectivamente, usando un
+  tablero ganador para terminar sin depender del azar. Comprueba parejas FIFO,
+  cantidad de resultados, ausencia de duplicaciones, pico ≤ M y reutilización.
+- Partidas con 200 clientes y cuatro mesas realmente activas, más clientes
+  esperando; SIGINT termina con 130 y vacía la cola.
+- `M=65` y `M=SIZE_MAX` válidos para `N=2`; prueba de `N=1025` que supera el
+  análisis de argumentos y reservas antes de un fallo inyectado del emparejador.
+  Esto demuestra eliminación de los topes, no una carga exitosa de 1025 clientes.
+- Rechazo de `SIZE_MAX+1`, tamaños no representables y falta de memoria real
+  mediante `RLIMIT_AS=128 MiB` en el subproceso. No se reduce el límite de memoria
+  del proceso que ejecuta las pruebas.
+- Diez fallos de `pthread_create`, tres fallos de `pthread_mutex_init` y cinco
+  modos de salida inesperada, distinguidos del abandono cooperativo.
+- Barreras pasivas de prueba antes de crear el receptor de señales, emparejador,
+  primer cliente y piezas; durante inicialización parcial de varias mesas
+  (`N=6, M=3`), y durante `fdopen` de configuración. Se envía SIGINT y se libera
+  la barrera; todos estos casos terminan con **130**.
+- Diez envíos después del marcador `SERVIDOR señales_bloqueadas`, todos con 130.
+  Otros diez envíos inmediatamente después de `Popen` terminaron **antes** de
+  ejecutar el bloqueo, con `-SIGINT`. Se clasifican como ventana previa al
+  mecanismo de la aplicación, no como cierres ordenados.
+
+Los procesos tienen plazos de observación. En Linux, las pruebas de cierre
+comprueban que `/proc/PID/task` ya no existe después de recoger el proceso.
+Eso acredita que no quedan hilos de esos procesos; no equivale a examinar todos
+los recursos del sistema operativo. No se crean semáforos con nombre ni IPC
+System V: los recursos del programa son privados del proceso.
+
+## LeakSanitizer y GitHub Actions
+
+El intento local actualizado fue:
 
 ```sh
-make clean
-make test
+ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 work/torneo-audit-lsan 2 1 configs/fallo_cliente.txt
 ```
 
-Resultado: salida **0**, sin advertencias. El Makefile compila los ocho módulos
-`board.c`, `config.c`, `game.c`, `log.c`, `main.c`, `queue.c`, `signals.c` y
-`tournament.c`, y enlaza `torneo` con `gcc -Wall -Wextra -std=c17` y `-pthread`.
-Genera además tres ejecutables unitarios y una biblioteca de inyección de errores.
-La ejecución final queda en `evidencia/normal.txt`.
-
-| Prueba | Resultado observado |
-| --- | --- |
-| `test_board` | 7 grupos aprobados: topología, pasos/saltos, reglas de captura, seis capturas, inmovilización, formato e invariantes. Incluye 100 competencias de dos hilos por una casilla. |
-| `test_config_queue` | Argumentos, enteros/overflow, claves, rangos, colisiones, carga transaccional y FIFO circular: aprobado. |
-| `test_game` | Abandono de ambos bandos, mesa reutilizada, notificación tardía, cierre idempotente y actividad de 13 piezas seguida de join: aprobado. |
-| Integración | 12 grupos aprobados; ningún caso omitido en la suite normal. |
-| Fallos de creación | Diez ejecuciones con fallo inyectado en distintas llamadas de `pthread_create`: salida de error esperada y cierre dentro del plazo. |
-| Carga y reciclaje | 100 clientes, 4 mesas, 50 partidas con tablero terminal inicial, sin duplicaciones ni saltos de FIFO. |
-| Concurrencia real | Hasta cuatro mesas activas con piezas moviéndose y más parejas esperando; el pico observado respeta M. |
-| SIGINT | Antes del primer emparejamiento, con mesa activa y cola, y con varias mesas: salida 130, resumen sin clientes en cola y jueces unidos. |
-
-El test de integración compara el orden real de inserción, no el ID ni el orden
-visual de líneas del log. Cada proceso tiene un timeout para que un bloqueo
-observado falle la prueba. La configuración terminal se usa para verificar el
-reciclaje sin depender de la duración de una partida aleatoria.
-
-## Partida completa con movimientos reales
-
-También se ejecutó `./torneo 2 1` con la disposición predeterminada. Terminó
-con salida **0**: 677 intentos registrados, seis capturas y victoria natural del
-Puma, con los trece hilos de piezas unidos. La duración observada fue 12,348 s;
-es una observación de esa ejecución y no un límite ni benchmark garantizado.
-Resumen conservado en `evidencia/natural.txt`.
-
-## Sanitizadores
-
-Se ejecutaron los objetivos públicos completos, incluidos los tres unitarios:
-
-```sh
-make asan
-make tsan
-make clean
-make test
-```
-
-`make asan`: salida **0**, AddressSanitizer y UndefinedBehaviorSanitizer sin
-reportes en las ejecuciones realizadas. LeakSanitizer se desactiva explícitamente
-con `ASAN_OPTIONS=detect_leaks=0`. `make tsan`: salida **0**, ThreadSanitizer sin
-reportes de carreras en las ejecuciones realizadas. En ambas suites pasan los
-11 grupos de integración compatibles y se omite explícitamente el grupo de
-inyección `LD_PRELOAD`; ese grupo sí se ejecuta en la compilación normal.
-La evidencia más completa está en `evidencia/asan-make.txt` y
-`evidencia/tsan-make.txt`; las pruebas aisladas anteriores también se conservan.
-
-### Verificación bloqueada por el entorno
-
-Se intentó realmente:
-
-```sh
-ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 work/torneo-asan 1 1
-```
-
-El programa completa el escenario, pero LeakSanitizer termina con salida **1**:
+El escenario termina y adjudica al rival, pero LSan sale con **1** y el mensaje
 `LeakSanitizer does not work under ptrace (strace, gdb, etc)`.
-La salida está en `evidencia/lsan.txt`. **No se certifica cero fugas de memoria**:
-esta herramienta no pudo verificarlo en el entorno actual. Los recursos se
-liberan explícitamente y los procesos probados terminan; eso no reemplaza la
-verificación de fugas.
+La compilación y salida exactas están en `evidencia/audit-lsan.txt`. **No es un
+reporte de fuga**, y tampoco una verificación satisfactoria de ausencia de fugas.
 
-Para reproducir el análisis fuera de un depurador/trazador:
+El workflow actualizado ejecuta `make test`, ASan/UBSan y, fuera del trazador
+local, `ASAN_OPTIONS=detect_leaks=1 make unit` más la integración compatible con
+LSan activo. Publica `komikan-concurrente.zip` como artefacto. El estado de la
+revisión exacta se comprueba en el [PR #1](https://github.com/m1soka/komikan-concurrente/pull/1);
+la mera presencia del YAML no constituye evidencia de éxito. La consulta y
+resultado de CI de la revisión se incorporan en `evidencia/audit-ci.txt` cuando
+se completa la ejecución, identificando el commit que se probó.
+
+Para reproducir fuera de un depurador/trazador:
 
 ```sh
 make clean
-make CFLAGS='-Wall -Wextra -std=c17 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined'
-ASAN_OPTIONS=detect_leaks=1 ./torneo 100 4 configs/asedio.txt
-ASAN_OPTIONS=detect_leaks=1 ./torneo 2 1 configs/abandono.txt
-ASAN_OPTIONS=detect_leaks=1 ./torneo 12 2
-# En la tercera ejecución, enviar Ctrl+C después de observar varias mesas.
+make CFLAGS='-Wall -Wextra -std=c17 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined' all unit
+ASAN_OPTIONS=detect_leaks=1 python3 tests/test_integration.py --no-injection
 ```
 
-GitHub Actions también se ejecutó realmente sobre el commit inicial del PR:
-[ejecución 41734201956](https://github.com/m1soka/komikan-concurrente/actions/runs/41734201956).
-Los jobs `test` y `sanitizers` finalizaron con `success`, incluido el paso
-`Comprobar fugas en escenario de cierre normal` con
-`ASAN_OPTIONS=detect_leaks=1 ./torneo 100 4 configs/asedio.txt`. Esto verifica ese
-escenario en Ubuntu remoto; la limitación de ptrace sigue aplicando al entorno
-local y no se extrapola a todos los escenarios. El workflow además genera un
-ZIP descargable como artefacto. La evidencia de los estados consultados está
-en `evidencia/ci.txt`.
+## Alcance y entrega
 
-## Alcance de la evidencia
+Las pruebas no demuestran ausencia de carreras, fugas o starvation en todos los
+interleavings. No se promete recuperación de SIGSEGV, SIGKILL, cancelación
+asíncrona, corrupción de memoria/mutex ni errores de join causados por handles
+inválidos. Los fallos soportados ocurren en estados consistentes con cleanup
+registrado. El código contempla un cliente que termina antes del registro;
+esa ruta tiene revisión de bookkeeping, pero no se le atribuye una inyección
+externa específica. No se probaron todos los valores representables de N/M ni
+todos los fallos de cada función POSIX. No hay garantía de victoria aleatoria en
+tiempo finito ni de salida acotada si el sistema bloquea E/S de forma no
+interrumpible.
 
-La semilla no determina el interleaving del planificador. No se midió throughput
-ni latencia de movimientos. No se probaron todos los valores posibles hasta
-1024 clientes/64 mesas, ni todos los fallos de malloc/inicialización de
-primitivas, ni todas las planificaciones posibles. El código comprueba fallos de
-inicialización y desenrolla los recursos ya creados, pero esa cobertura de fallo
-no se equipara a los diez casos de creación de hilos ejecutados.
-
-El abandono probado es cooperativo, coherente con clientes locales; no se afirma
-recuperación ante corrupción arbitraria, SIGKILL o caída completa del proceso.
-Tampoco se garantiza una victoria aleatoria en tiempo finito ni equidad estricta
-del planificador POSIX.
-
-El PDF final se verificó con `pdfinfo`: **2 páginas A4**. El ZIP contiene fuentes,
-configuraciones, pruebas, documentación, evidencia y manifiesto SHA-256; no contiene
-objetos, ejecutables, `.git` ni archivos de trabajo. Su extracción y compilación
-se registran en `evidencia/paquete.txt` al completar el empaquetado.
-
-## Ubicación y acceso a los entregables
-
-La carpeta de proyecto y el ZIP existen en el repositorio conectado. El destino
-local de descargas indicado por el cliente (`/codex/browser/.../output`) no existe
-en este ejecutor y su raíz no permite escritura; se intentó crearlo y el sistema
-respondió `Permission denied`. Por eso la entrega descargable se publica como
-artefacto de GitHub Actions, accesible desde el PR. La descarga del repositorio
-privado requiere la sesión de GitHub del usuario. No se presenta un enlace local
-a un archivo inexistente.
+El informe se regenera y comprueba con `pdfinfo`: máximo **dos páginas A4**.
+El ZIP se genera desde los archivos reales, excluye `.git`, objetos, ejecutables
+y temporales, e incluye `MANIFEST.sha256`. La extracción, hashes y compilación
+se registran en `evidencia/audit-paquete.txt`. El destino local de descargas
+`/codex/browser/.../output` no permite creación en este ejecutor; la entrega
+se ofrece mediante el artefacto de GitHub Actions del repositorio privado.

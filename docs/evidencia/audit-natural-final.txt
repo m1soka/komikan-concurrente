@@ -1,0 +1,11 @@
+$ ./torneo 2 1
+EXIT_CODE=0
+Duracion observada=7.429s
+SIGINT tras30segundos=False
+Eventos movimiento=402
+Capturas aplicadas=6
+/proc/29835/task existe=False
+PAREJA partida=1 mesa=1 puma=1 perros=2 ordenes=1,2 activas=1
+MESA fin mesa=1 partida=1 ganador=1 motivo=capturas capturados=6 piezas_unidas=13
+RESULTADO partida=1 mesa=1 ganador=1 motivo=capturas
+RESUMEN creados=2 llegados=2 partidas=1 completadas=1 pico_mesas=1 limite=1 en_cola=0

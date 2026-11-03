@@ -2,10 +2,12 @@
 
 ## Recorrido de una ejecución
 
-`main.c` valida `N`, `M` y el archivo opcional. La configuración se comprueba antes
-de iniciar trabajo concurrente. Se bloquea `SIGINT` antes de crear hilos: todos
-heredan esa máscara. Un hilo de señales espera con `sigwait()`; no ejecutamos
-lógica compleja desde un manejador asíncrono.
+La primera operación de `main.c` bloquea `SIGINT` y `SIGUSR1`. Después crea el hilo
+dedicado a `sigwait()`, antes de validar `N`, `M` o leer el archivo opcional. Todos
+los hilos posteriores heredan esa máscara. La bandera atómica de interrupción
+permite recordar una señal aunque el torneo aún no exista; no se ejecuta lógica
+compleja desde un manejador asíncrono. La configuración se lee de forma
+interrumpible y solo desde un archivo regular.
 
 Se crean clientes locales concurrentes. Cada cliente registra su llegada en una
 cola FIFO protegida por el mutex del torneo y espera una notificación. El orden
@@ -15,8 +17,10 @@ El primer cliente controla al Puma y el segundo a los Perros.
 
 Al iniciar el servidor, `game_init()` crea un mutex y una condición para cada
 slot de mesa. Cuando hay una pareja y un slot libre, el emparejador llama a
-`game_prepare()` para instalar su tablero y estado. El juez comprueba la posición
-inicial y, si no es terminal, crea trece hilos de piezas. El cliente del bando
+`game_prepare()` para validar disposición y preparar configuración e identidades;
+el tablero compartido aún tiene `board_ready=false`. El juez ejecuta
+`board_init()` bajo el mutex, publica el tablero listo y comprueba la posición
+inicial. Si no es terminal, crea trece hilos de piezas. El cliente del bando
 Perros no es una ficha: sus doce fichas tienen actividad independiente. Cada
 pieza espera un retardo aleatorio de 50 a 300 ms, elige una propuesta y permite
 que el juez la valide contra el estado actual. Los movimientos de mesas distintas
@@ -33,13 +37,13 @@ servidor, cuando ningún hilo puede volver a utilizarlas.
 
 | Archivo o grupo | Responsabilidad |
 | --- | --- |
-| `src/main.c` | Interpretar la CLI, cargar configuración y devolver un código de salida. |
+| `src/main.c` | Bloquear señales desde la primera operación, iniciar el receptor, interpretar CLI/configuración y devolver un código. |
 | `src/tournament.c` | Poseer clientes, cola y slots; crear el emparejador, limitar mesas y recoger hilos. |
 | `src/game.c` | Administrar tablero, buzones de propuestas, hilos de piezas, juez, resultados y cierre. |
-| `src/signals.c` | Bloquear señales y convertir `sigwait()` en una notificación normal de cierre. |
-| `src/log.c` | Imprimir mensajes completos bajo un mutex independiente de salida. |
+| `src/signals.c` | Recibir señales, conservar una bandera atómica y vincular/desvincular callbacks de forma segura. |
+| `src/log.c` | Imprimir mensajes completos; proteger el mutex de salida con cancelación deshabilitada y cleanup propio. |
 | `src/board.c` | Topología, jugadas legales, capturas, invariantes y condiciones de victoria. |
-| `src/config.c` | Valores predeterminados y análisis estricto de configuración/enteros. |
+| `src/config.c` | Valores predeterminados, enteros seguros y lectura estricta e interrumpible de archivos regulares. |
 | `src/queue.c` | FIFO circular de clientes; requiere exclusión del llamador si se comparte. |
 | `include/*.h` | Contratos y tipos que separan responsabilidades entre módulos. |
 | `tests/` | Comprobar reglas aisladas y comportamiento observable del proceso concurrente. |
@@ -57,6 +61,12 @@ El torneo comparte cola, estados de clientes, disponibilidad de mesas y petició
 de cierre. Su mutex protege los cambios que deben verse juntos. Una variable de
 condición no guarda el evento por sí sola: el estado protegido es el predicado
 que cada hilo vuelve a comprobar después de despertarse.
+
+El módulo de señales tiene una bandera `atomic_bool` accesible durante todo el
+inicio. Otro mutex serializa la instalación y ejecución del callback. Se permite
+el orden mutex de callback → mutex del torneo; por eso `signals_bind()` se invoca
+sin mantener el mutex del torneo. Al desvincular se espera a cualquier callback
+en curso y después se puede liberar su contexto con seguridad.
 
 Cada partida comparte ocupación de nodos, posición de piezas, capturas, propuestas
 y estado terminal. Un único mutex de tablero evita que una validación observe un
@@ -132,9 +142,35 @@ La inyección de abandono identifica un cliente. Su espera `fail_after_ms` comie
 cuando ese cliente observa que ya fue asignado, no desde un reloj absoluto del
 juez. La notificación termina la partida con victoria del rival y despierta al
 juez. Las identidades de la pareja actual se verifican para que un aviso tardío
-de la pareja anterior no termine una nueva partida en el mismo slot. Los hilos
-no se cancelan mientras sostienen mutexes. La simulación cooperativa no pretende
-recuperar un proceso corrompido o muerto por `SIGKILL`.
+de la pareja anterior no termine una nueva partida en el mismo slot.
+
+Las salidas inesperadas tienen una ruta distinta del abandono cooperativo. Los
+clientes deshabilitan la cancelación y ejecutan un cleanup si llaman a
+`pthread_exit()`. Ese cleanup conoce si su hilo posee el mutex del torneo,
+retira al cliente no asignado conservando el orden de los demás y contabiliza una
+salida anterior al registro para no dejar al emparejador esperando una llegada
+imposible. Si ya tenía partida, notifica `game_participant_failed()` y el juez
+declara ganador al rival. Los modos configurables se disparan después de asignar
+mesa; por ello no deben presentarse como una prueba de salida anterior al registro.
+El wrapper considera normal el retorno del cuerpo únicamente si el cliente ya
+terminó o el torneo está cerrando; un retorno prematuro también activa la ruta
+de fallo.
+
+Las piezas usan cancelación diferida y un cleanup que distingue ficha capturada,
+partida terminada y salida inesperada. Las transiciones de adquisición/liberación
+deshabilitan cancelación hasta actualizar el indicador de propiedad. Si la
+cancelación ocurre en una condición, POSIX recupera primero el mutex y el cleanup
+lo recibe poseído por ese mismo hilo. Se retira cualquier propuesta pendiente,
+se marca la anomalía y se notifica al juez, que adjudica el bando rival. La prueba
+`piece_cancel_wait` cancela a la propia pieza de forma diferida; el cierre normal
+del torneo sigue siendo cooperativo.
+
+El juez es el único que escribe el tablero y tiene la cancelación deshabilitada.
+Los puntos soportados de fallo de pieza no interrumpen una escritura parcial del
+tablero. No se usa cancelación asíncrona ni desbloqueo de mutex ajeno. Tampoco se
+promete recuperar corrupción de memoria, `SIGSEGV`, `SIGKILL`, la muerte del juez
+o la caída completa del proceso; no son abandonos aislables con seguridad en este
+modelo Pthreads.
 
 Un fallo al crear hilos o inicializar primitivas requiere recordar qué recursos
 se inicializaron realmente. Solo esos recursos se destruyen; los hilos creados
@@ -144,9 +180,11 @@ de hilo cuya creación falló.
 Con Ctrl+C, el hilo de señales marca cierre, despierta al emparejador/clientes y
 notifica las mesas. No se aceptan más llegadas una vez observado ese estado. Las
 piezas salen de sus esperas sin esperar todo el retardo pendiente. Se recogen
-clientes, piezas, jueces y el propio hilo de señales antes de liberar memoria y
-primitivas. `SIGUSR1` se reserva para despertar `sigwait()` cuando la ejecución
-termina normalmente.
+clientes, piezas y jueces antes de destruir sus recursos. Se desvincula el callback
+de señales antes de liberar el torneo; `main()` recoge después al propio receptor
+de señales. `SIGUSR1` se reserva para despertar `sigwait()` cuando la ejecución
+termina normalmente. La ventana anterior a ejecutar el bloqueo inicial de
+`main()` sigue perteneciendo al comportamiento predeterminado del sistema.
 
 ## Veinte preguntas de interrogación
 
@@ -194,15 +232,19 @@ termina normalmente.
     el emparejamiento; la API de mutexes no garantiza equidad temporal de cada
     pieza. Se reduce el riesgo con secciones breves y retardos, sin prometer una
     propiedad que el planificador no proporciona.
-15. **¿Por qué no utilizar `pthread_cancel()` para el abandono?** La cancelación
-    puede interrumpir un hilo en un punto con recursos retenidos. Una notificación
-    cooperativa permite salir por rutas controladas y hacer `join` antes de limpiar.
+15. **¿Qué cancelación es segura aquí?** El cierre habitual y el abandono son
+    cooperativos. Las piezas también admiten cancelación diferida en puntos
+    controlados con cleanup y propiedad de mutex registrada; el modo de prueba
+    cancela a la propia pieza dentro de una espera. La cancelación asíncrona no
+    está soportada. Los clientes, jueces y emparejador deshabilitan cancelación.
 16. **¿Por qué `sigwait()` en vez de un manejador de SIGINT?** El hilo puede usar
     primitivas normales de sincronización en contexto normal. Un manejador
     asíncrono no puede llamar libremente esas funciones de forma segura.
-17. **¿Por qué se bloquea SIGINT antes de crear hilos?** Así todos heredan la
-    máscara y la señal no termina por defecto un hilo cualquiera; la consume el
-    hilo dedicado mediante `sigwait()`.
+17. **¿Qué cubre bloquear SIGINT al principio de `main()`?** Los hilos heredan la
+    máscara y el receptor dedicado conserva interrupciones durante configuración
+    y reservas, incluso antes de vincular el callback del torneo. No cubre una
+    señal recibida antes de que el proceso ejecute ese bloqueo; las pruebas
+    distinguen esa frontera mediante el marcador de señales bloqueadas.
 18. **¿Cuándo se puede destruir un mutex?** Cuando ningún hilo lo posee, espera
     por él o puede volver a usarlo. El orden de notificación y `join` establece ese
     momento; destruirlo inmediatamente al marcar cierre sería prematuro. En este
@@ -215,5 +257,7 @@ termina normalmente.
     todas las ejecuciones posibles. Aporta evidencia observable; se complementa
     con invariantes, revisión de propiedad de recursos y sanitizadores cuando el
     entorno los ejecuta correctamente. ASan/UBSan y TSan se ejecutaron sobre la
-    suite sin el wrapper de inyección; LeakSanitizer no pudo validar fugas porque
-    su runtime rechazó ejecutarse bajo `ptrace` en este entorno.
+    suite compatible sin los wrappers de inyección. LeakSanitizer informó una
+    limitación local por `ptrace`; cualquier resultado fuera de ese entorno debe
+    atribuirse al escenario y commit efectivamente probados. La matriz y los
+    resultados actualizados están en `requisitos.md` y `pruebas.md`.

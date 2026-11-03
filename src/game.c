@@ -12,6 +12,12 @@ typedef struct {
     uint32_t random_state;
 } piece_argument_t;
 
+typedef struct {
+    game_t *game;
+    int piece;
+    bool mutex_owned, expected_exit;
+} piece_cleanup_t;
+
 static struct timespec after_ms(unsigned milliseconds)
 {
     struct timespec time;
@@ -78,8 +84,19 @@ bool game_prepare(game_t *game, const config_t *config, size_t table_id,
                   size_t match_id, size_t puma_client, size_t dogs_client,
                   game_finish_fn on_finish, void *context)
 {
+    /* This is validation, not initialization of the shared board. Only the
+       judge writes that board, after the assignment's metadata is ready. */
+    bool seen[BOARD_NODES] = {false};
+    bool valid = true;
+    for (int piece = 0; piece < PIECE_COUNT; piece++) {
+        int node = config->positions[piece];
+        if (node < 0 || node >= BOARD_NODES || seen[node]) {
+            valid = false;
+            break;
+        }
+        seen[node] = true;
+    }
     (void)pthread_mutex_lock(&game->mutex);
-    bool valid = board_init(&game->board, config->positions);
     if (valid) {
         game->config = *config;
         game->table_id = table_id;
@@ -87,10 +104,14 @@ bool game_prepare(game_t *game, const config_t *config, size_t table_id,
         game->puma_client = puma_client;
         game->dogs_client = dogs_client;
         game->finished = false;
+        game->board_ready = false;
         game->winner = 0;
         game->reason = "en_curso";
         game->next_sequence = 0;
         memset(game->intents, 0, sizeof(game->intents));
+        memset(game->piece_failed, 0, sizeof(game->piece_failed));
+        memset(game->piece_failure_request, 0, sizeof(game->piece_failure_request));
+        game->participant_failure_winner = 0;
         game->on_finish = on_finish;
         game->context = context;
     }
@@ -113,12 +134,104 @@ void game_abandon(game_t *game, size_t client_id)
     (void)pthread_mutex_unlock(&game->mutex);
 }
 
-static void *piece_run(void *argument)
+void game_participant_failed(game_t *game, size_t client_id)
 {
-    piece_argument_t *piece = argument;
-    game_t *game = piece->game;
     (void)pthread_mutex_lock(&game->mutex);
+    if (!game->finished && game->participant_failure_winner == 0) {
+        if (client_id == game->puma_client) game->participant_failure_winner = 2;
+        else if (client_id == game->dogs_client) game->participant_failure_winner = 1;
+    }
+    (void)pthread_cond_broadcast(&game->changed);
+    (void)pthread_mutex_unlock(&game->mutex);
+}
+
+bool game_inject_piece_failure(game_t *game, size_t client_id,
+                               game_failure_mode_t mode)
+{
+    bool injected = false;
+    if (mode < GAME_FAIL_EXIT_LOCKED || mode > GAME_FAIL_CANCEL_WAIT) return false;
+    (void)pthread_mutex_lock(&game->mutex);
+    int first = -1, last = -1;
+    if (client_id == game->puma_client) first = last = 0;
+    else if (client_id == game->dogs_client) {
+        first = 1;
+        last = DOG_COUNT;
+    }
+    for (int piece = first; !game->finished && piece >= 0 && piece <= last; piece++) {
+        if (!game->board_ready || game->board.positions[piece] >= 0) {
+            game->piece_failure_request[piece] = mode;
+            injected = true;
+            break;
+        }
+    }
+    (void)pthread_cond_broadcast(&game->changed);
+    (void)pthread_mutex_unlock(&game->mutex);
+    return injected;
+}
+
+/* Cancellation is disabled across ownership transitions. At every enabled
+   cancellation point, mutex_owned precisely describes what this thread owns.
+   In particular, POSIX cond_wait reacquires the mutex before running cleanup. */
+static void piece_lock(piece_cleanup_t *cleanup)
+{
+    (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+    (void)pthread_mutex_lock(&cleanup->game->mutex);
+    cleanup->mutex_owned = true;
+    (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+}
+
+static void piece_unlock(piece_cleanup_t *cleanup)
+{
+    (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+    (void)pthread_mutex_unlock(&cleanup->game->mutex);
+    cleanup->mutex_owned = false;
+    (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+}
+
+static void piece_cleanup(void *argument)
+{
+    piece_cleanup_t *cleanup = argument;
+    game_t *game = cleanup->game;
+    (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+    if (!cleanup->mutex_owned) (void)pthread_mutex_lock(&game->mutex);
+    bool captured = game->board_ready && game->board.positions[cleanup->piece] < 0;
+    if (!cleanup->expected_exit && !game->finished && !captured)
+        game->piece_failed[cleanup->piece] = true;
+    /* A terminated piece cannot leave a request owned by a nonexistent worker. */
+    game->intents[cleanup->piece].pending = false;
+    (void)pthread_cond_broadcast(&game->changed);
+    (void)pthread_mutex_unlock(&game->mutex);
+    cleanup->mutex_owned = false;
+}
+
+/* Called with the board mutex owned; only this piece exits/cancels itself.
+   Pieces only submit requests, so these failure points cannot interrupt a
+   partially written board. The judge remains the board's sole writer. */
+static void inject_requested_failure(piece_cleanup_t *cleanup)
+{
+    game_t *game = cleanup->game;
+    game_failure_mode_t mode = game->piece_failure_request[cleanup->piece];
+    game->piece_failure_request[cleanup->piece] = 0;
+    if (mode == GAME_FAIL_EXIT_LOCKED) pthread_exit(NULL);
+    if (mode == GAME_FAIL_EXIT_UNLOCKED) {
+        piece_unlock(cleanup);
+        pthread_exit(NULL);
+    }
+    if (mode == GAME_FAIL_CANCEL_WAIT) {
+        (void)pthread_cancel(pthread_self());
+        /* With deferred cancellation this is the cancellation point. Its
+           cleanup handler receives the mutex reacquired by cond_wait. */
+        (void)pthread_cond_wait(&game->changed, &game->mutex);
+        pthread_testcancel();
+    }
+}
+
+static void piece_body(piece_argument_t *piece, piece_cleanup_t *cleanup)
+{
+    game_t *game = piece->game;
+    piece_lock(cleanup);
     while (!game->finished && game->board.positions[piece->piece] >= 0) {
+        inject_requested_failure(cleanup);
         unsigned range = game->config.max_delay_ms - game->config.min_delay_ms + 1U;
         unsigned delay = game->config.min_delay_ms + random_next(&piece->random_state) % range;
         struct timespec deadline = after_ms(delay);
@@ -126,6 +239,7 @@ static void *piece_run(void *argument)
         /* Spurious/movement wakeups keep the original deadline. cond_wait
            releases the mutex; no piece sleeps while retaining the board. */
         while (!game->finished && game->board.positions[piece->piece] >= 0 &&
+               game->piece_failure_request[piece->piece] == 0 &&
                error != ETIMEDOUT) {
             error = pthread_cond_timedwait(&game->changed, &game->mutex, &deadline);
             if (error != 0 && error != ETIMEDOUT) {
@@ -134,6 +248,7 @@ static void *piece_run(void *argument)
             }
         }
         if (game->finished || game->board.positions[piece->piece] < 0) break;
+        inject_requested_failure(cleanup);
         int destinations[BOARD_NODES];
         size_t count = board_moves(&game->board, piece->piece, destinations);
         if (count == 0) continue;
@@ -142,15 +257,33 @@ static void *piece_run(void *argument)
         game->intents[piece->piece].sequence = ++game->next_sequence;
         game->intents[piece->piece].pending = true;
         (void)pthread_cond_broadcast(&game->changed);
-        while (!game->finished && game->intents[piece->piece].pending) {
+        while (!game->finished && game->intents[piece->piece].pending &&
+               game->piece_failure_request[piece->piece] == 0) {
             error = pthread_cond_wait(&game->changed, &game->mutex);
             if (error != 0) {
                 finish_locked(game, -1, "error_condicion");
                 break;
             }
         }
+        if (!game->finished && game->board.positions[piece->piece] >= 0)
+            inject_requested_failure(cleanup);
     }
-    (void)pthread_mutex_unlock(&game->mutex);
+    cleanup->expected_exit = game->finished || game->board.positions[piece->piece] < 0;
+    piece_unlock(cleanup);
+}
+
+static void *piece_run(void *argument)
+{
+    piece_argument_t *piece = argument;
+    piece_cleanup_t cleanup = {piece->game, piece->piece, false, false};
+    (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+    (void)pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+    /* The wrapper executes cleanup after ordinary return too, distinguishing
+       a valid captured/finished exit from an unexpected early body return. */
+    pthread_cleanup_push(piece_cleanup, &cleanup);
+    (void)pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+    piece_body(piece, &cleanup);
+    pthread_cleanup_pop(1);
     return NULL;
 }
 
@@ -172,16 +305,39 @@ static void check_victory_locked(game_t *game)
     if (result == GAME_DOGS) finish_locked(game, 2, "inmovilizacion");
 }
 
+static void check_failures_locked(game_t *game)
+{
+    if (game->participant_failure_winner != 0)
+        finish_locked(game, game->participant_failure_winner, "fallo_cliente");
+    for (int piece = 0; piece < PIECE_COUNT; piece++) {
+        if (game->piece_failed[piece]) {
+            finish_locked(game, piece == 0 ? 2 : 1, "fallo_pieza");
+            break;
+        }
+    }
+}
+
 void *game_run(void *argument)
 {
     game_t *game = argument;
+    /* Infrastructure threads terminate cooperatively. They are not player
+       workers and must not be cancelled halfway through board writes/joins. */
+    (void)pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
     pthread_t threads[PIECE_COUNT];
     piece_argument_t arguments[PIECE_COUNT];
     size_t created = 0;
     char snapshot[2048];
     (void)pthread_mutex_lock(&game->mutex);
-    check_victory_locked(game);
-    board_format(&game->board, snapshot, sizeof(snapshot));
+    game->board_ready = board_init(&game->board, game->config.positions);
+    if (!game->board_ready) {
+        finish_locked(game, -1, "error_tablero");
+        (void)strcpy(snapshot, "tablero_no_inicializado\n");
+    } else {
+        check_failures_locked(game);
+        check_victory_locked(game);
+        board_format(&game->board, snapshot, sizeof(snapshot));
+    }
+    (void)pthread_cond_broadcast(&game->changed);
     (void)pthread_mutex_unlock(&game->mutex);
     log_event("MESA inicio mesa=%zu partida=%zu puma=%zu perros=%zu\n%s",
               game->table_id, game->match_id, game->puma_client,
@@ -209,6 +365,8 @@ void *game_run(void *argument)
 
     (void)pthread_mutex_lock(&game->mutex);
     while (!game->finished) {
+        check_failures_locked(game);
+        if (game->finished) break;
         int piece = oldest_intent(game);
         if (piece < 0) {
             int error = pthread_cond_wait(&game->changed, &game->mutex);

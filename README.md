@@ -24,15 +24,18 @@ La compilación usa `gcc -Wall -Wextra -std=c17` y `-pthread`. La interfaz es:
 ```
 
 `N` es el total de clientes y `M` el máximo de mesas activas. Ambos deben ser
-enteros positivos. El límite de capacidad de esta implementación es 1024 clientes
-y 64 mesas; se valida antes de reservar recursos. `M` puede superar la cantidad de
-parejas disponibles. Con `N` impar, el último cliente que no encuentra rival se
-retira sin disputar una partida. Estas decisiones resuelven aspectos no definidos
-por el PDF.
+enteros positivos representables en `size_t`. Se comprueban los productos de
+asignación y los plazos antes de usarlos; no hay máximos artificiales de 1024
+clientes o 64 mesas. La capacidad efectiva depende de memoria, espacio virtual y
+hilos disponibles: una reserva o creación puede fallar y provoca cierre con error.
+`M` puede superar las parejas disponibles; solo se reservan
+`min(M, N/2)` slots. Con `N` impar, el último cliente sin rival se retira sin
+disputar partida. No se promete capacidad ilimitada.
 
 Presiona **Ctrl+C** para detener llegadas, notificar partidas y esperar la salida
 de todos los hilos. Los códigos de salida son 0 para ejecución normal, 1 para
-fallos internos o falta de recursos, 2 para argumentos/configuración inválidos y
+fallos internos o falta de recursos, 2 para argumentos/configuración o tamaños no
+representables y
 130 para cierre por `SIGINT`. Un fallo interno tiene prioridad si coincide con
 una interrupción.
 
@@ -40,8 +43,11 @@ una interrupción.
 
 El archivo es texto `clave=valor`, con una clave por línea. Las claves son
 opcionales y sus valores reemplazan la configuración predeterminada. Se rechazan
-claves desconocidas o duplicadas, valores fuera de rango y posiciones repetidas.
-Las líneas vacías y los comentarios indicados en el archivo de ejemplo se omiten.
+claves desconocidas o duplicadas, valores fuera de rango, NUL incrustado y
+posiciones repetidas. Las líneas vacías y los comentarios desde `#` se omiten.
+Solo se aceptan archivos regulares; FIFO y directorios se rechazan para evitar
+esperas indefinidas durante la apertura de la configuración. La carga comprueba
+interrupciones mientras lee y conserva la configuración anterior si falla.
 
 | Clave | Significado |
 | --- | --- |
@@ -52,10 +58,26 @@ Las líneas vacías y los comentarios indicados en el archivo de ejemplo se omit
 | `dogs` | Doce nodos iniciales de Perros, separados por comas. |
 | `arrival_delay_ms` | Escalona la llegada del cliente `i` con `(i-1) × valor` ms, de 0 a 1000 ms por paso. |
 | `fail_player` | ID de cliente que simula abandono durante su partida; 0 lo desactiva. |
-| `fail_after_ms` | Espera desde que el cliente observa su asignación hasta notificar abandono, de 0 a 60000 ms. |
+| `fail_after_ms` | Espera desde que el cliente observa su asignación hasta inyectar el modo elegido, de 0 a 60000 ms. |
+| `fail_mode` | Modo de fallo de la tabla siguiente; por defecto `abandon`. |
 
-`fail_player` debe identificar un cliente de la ejecución. El abandono es una
-extensión de prueba del modelo de clientes locales: no se abre un servidor de red.
+`fail_player` debe ser 0 o identificar un cliente de la ejecución. Los modos
+distintos de `abandon` exigen un ID distinto de 0. Son mecanismos de prueba del
+modelo de clientes locales; no se abre un servidor de red.
+
+| `fail_mode` | Escenario soportado |
+| --- | --- |
+| `abandon` | Abandono cooperativo notificado al juez. |
+| `client_exit_locked` | `pthread_exit()` del cliente mientras posee el mutex del torneo. |
+| `client_exit_unlocked` | `pthread_exit()` del cliente sin poseer ese mutex. |
+| `piece_exit_locked` | `pthread_exit()` de una pieza del bando elegido con mutex de tablero. |
+| `piece_exit_unlocked` | `pthread_exit()` de esa pieza sin mutex de tablero. |
+| `piece_cancel_wait` | Cancelación diferida de una pieza en una espera de condición. |
+
+Para Perros se selecciona una pieza viva del bando. Los ejemplos
+`configs/fallo_cliente.txt` y `configs/fallo_pieza.txt` permiten reproducir salidas
+inesperadas sin modificar las reglas del juego.
+
 La disposición predeterminada es Puma en 0 y Perros en 13 a 24; los retardos son
 50–300 ms, la semilla es 1 y el abandono está desactivado. La semilla reproduce
 las secuencias de cada generador; el orden de los hilos
@@ -98,8 +120,10 @@ emparejador solo ocupa slots libres y por ello nunca supera `M` partidas activas
 
 Cada slot de mesa tiene un mutex y una condición persistentes, creados al
 inicializar el servidor. Tras recoger mediante `join` al juez anterior, el
-emparejador prepara el nuevo tablero y el mismo slot puede reutilizarse. El juez
-comprueba la posición inicial, crea las piezas y procesa sus propuestas.
+emparejador instala la configuración y las identidades de la pareja. El juez
+inicializa realmente el tablero bajo su mutex, comprueba la posición inicial,
+crea las piezas y procesa sus propuestas. El estado `board_ready` impide tratar
+la preparación de metadatos como un tablero ya inicializado.
 
 La comprobación de una jugada y su aplicación forman una única sección crítica
 del tablero. Los trece hilos de piezas esperan retardos independientes; las
@@ -108,10 +132,32 @@ propuestas tienen números de secuencia y el juez procesa primero la más antigu
 validándola de nuevo contra el estado actual. El juez publica estados
 consistentes y libera el mutex del tablero antes de escribirlos en consola.
 
-`SIGINT` se bloquea antes de crear hilos y lo recibe un hilo dedicado mediante
-`sigwait()`. No se usa un manejador asíncrono ni `pthread_cancel()`. Se notifica el
-cierre y se hace `join` antes de destruir mutexes y condiciones. `SIGUSR1` queda
-reservada para despertar el hilo de señales al terminar normalmente.
+La primera operación de `main()` bloquea `SIGINT`; el hilo dedicado a `sigwait()`
+se crea antes de leer configuración o reservar el torneo. Una bandera atómica
+conserva las interrupciones recibidas durante el inicio. La vinculación del
+callback aplica una interrupción pendiente y la desvinculación espera que los
+callbacks terminen antes de liberar su contexto. Se notifica el cierre y se hace
+`join` antes de destruir mutexes y condiciones. `SIGUSR1` queda reservada para
+despertar el hilo de señales al terminar normalmente.
+
+Una señal enviada antes de que el proceso ejecute su bloqueo inicial puede
+terminarlo con la acción predeterminada del sistema. La aplicación no puede
+controlar esa ventana anterior a su primera instrucción. El marcador
+`SERVIDOR señales_bloqueadas` permite distinguirla en las pruebas.
+
+Los clientes y las piezas tienen cleanup handlers que distinguen salida normal
+de inesperada y liberan únicamente mutexes poseídos por el hilo que sale. Si la
+partida sigue en curso, el juez declara ganador al rival ante `fallo_cliente` o
+`fallo_pieza`. Los clientes tienen
+la cancelación deshabilitada; las piezas admiten cancelación diferida en puntos
+seguros y protegen las transiciones de propiedad del mutex. El cierre habitual
+usa notificaciones cooperativas; `pthread_cancel()` solo se utiliza en el modo
+de prueba diferido de una pieza, nunca como cancelación asíncrona.
+
+Este soporte no recupera `SIGSEGV`, `SIGKILL`, corrupción de memoria, cancelación
+asíncrona ni la caída completa del proceso. Un fallo al crear un hilo se trata
+como error de infraestructura y se recogen los hilos ya creados; no se confunde
+con el abandono de un participante que ya estaba jugando.
 
 Los movimientos aleatorios pueden prolongar una partida indefinidamente. El
 enunciado no define empate ni tiempo máximo y el programa no inventa esas
@@ -128,22 +174,33 @@ make clean
 
 `make test` compila las pruebas unitarias y ejecuta la suite de integración. Esta
 cubre CLI/configuración, FIFO, partidas, reutilización, cliente impar, abandono,
-fallos inyectados de `pthread_create` y SIGINT con llegadas o mesas en espera.
-Las pruebas del tablero incluyen 100 competencias por una misma casilla; las de
-partida comprueban abandono de ambos bandos y reutilización sin aceptar avisos
-obsoletos.
+fallos inyectados de creación/inicialización, agotamiento de memoria y SIGINT en
+distintas etapas. Incluye cargas con 2, 10, 100 y 200 clientes. Las pruebas del
+tablero comprueban las 784 relaciones posibles, 70 rutas de captura dirigidas,
+100 competencias por una casilla y conservación de invariantes durante juego
+legal. Las de partida comprueban inicialización por el juez, abandono de ambos
+bandos, fallos de piezas dentro/fuera del mutex, cancelación diferida y
+reutilización sin aceptar avisos obsoletos.
 
 `make asan` usa AddressSanitizer y UndefinedBehaviorSanitizer; `make tsan` usa
 ThreadSanitizer. Estos objetivos reconstruyen el ejecutable y los tests con sus
 opciones, por lo que conviene ejecutar `make clean && make` al volver al binario
-normal. La inyección con `LD_PRELOAD` se omite expresamente en la integración
-sanitizada para no superponer wrappers de `pthread_create`.
+normal. Los escenarios con wrappers `LD_PRELOAD` y agotamiento de memoria se
+omiten expresamente en la integración sanitizada para no interferir con sus
+runtimes; se conservan en la suite normal.
 
 Los resultados ejecutados y sus límites se registran en `docs/pruebas.md` y los
-logs de `docs/evidencia/`. La ejecución normal completó 12 pruebas de integración;
-ASan/UBSan y TSan completaron 11 y omitieron la de inyección. LeakSanitizer no
-pudo verificar fugas porque su runtime indicó que no funciona bajo `ptrace` en
-este entorno. No se afirma una comprobación dinámica de cero fugas.
+logs de `docs/evidencia/`. Las cuentas, omisiones y estados de GitHub Actions se
+atribuyen a las ejecuciones y commits allí identificados; una ejecución anterior
+no valida automáticamente una corrección posterior. En la auditoría local,
+compilación y tres unitarios terminaron correctamente; la integración pasó sus
+22 grupos, también ejecutada por separado. ASan/UBSan y TSan terminaron con
+17 grupos aprobados y cinco omisiones explícitas en cada integración. Los logs
+correspondientes llevan el prefijo `audit-`. LeakSanitizer indicó una
+limitación por `ptrace` en el entorno local. Un resultado satisfactorio fuera de
+él solo verifica los escenarios ejecutados, no una ausencia universal de fugas.
+La matriz detallada y los problemas corregidos están en `docs/auditoria.md` y
+`docs/requisitos.md`.
 
 Para regenerar los entregables:
 
@@ -169,7 +226,8 @@ hilos en cada ejecución.
 mesas activas. `MESA movimiento` incluye secuencia, ficha, origen, destino,
 aceptación y capturas; los movimientos aceptados muestran el tablero actualizado.
 `RESULTADO` indica el ganador: 1 Puma, 2 Perros, 0 interrupción y -1 error interno.
-Los motivos principales son `capturas`, `inmovilizacion`, `abandono` y `SIGINT`.
+Los motivos principales son `capturas`, `inmovilizacion`, `abandono`,
+`fallo_cliente`, `fallo_pieza` y `SIGINT`.
 `SIN_RIVAL` informa del cliente impar y `RESUMEN` permite comprobar el pico de
 mesas, partidas completadas y cola restante. El registro se imprime por mensajes
 completos, aunque el planificador puede alterar el orden entre eventos de mesas
@@ -181,6 +239,7 @@ distintas.
 - `configs/`: configuraciones de ejemplo y escenarios reproducibles.
 - `tests/`: reglas, validación, FIFO y escenarios completos del proceso.
 - `docs/requisitos.md`: trazabilidad al PDF y decisiones de interpretación.
+- `docs/auditoria.md`: hallazgos, correcciones, responsabilidades y límites.
 - `docs/tablero.md`: grafo completo y reglas de salto del trono.
 - `docs/defensa.md`: explicación de la solución y veinte preguntas con respuestas.
 - `docs/informe.pdf`: informe de sincronización y riesgos, de hasta dos páginas.
