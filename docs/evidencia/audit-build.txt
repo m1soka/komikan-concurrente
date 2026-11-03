@@ -1,0 +1,16 @@
+$ make clean
+rm -rf build torneo
+
+EXIT_CODE=0
+$ make
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O2 -g -pthread -MMD -MP -c src/board.c -o build/board.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O2 -g -pthread -MMD -MP -c src/config.c -o build/config.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O2 -g -pthread -MMD -MP -c src/game.c -o build/game.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O2 -g -pthread -MMD -MP -c src/log.c -o build/log.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O2 -g -pthread -MMD -MP -c src/main.c -o build/main.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O2 -g -pthread -MMD -MP -c src/queue.c -o build/queue.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O2 -g -pthread -MMD -MP -c src/signals.c -o build/signals.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O2 -g -pthread -MMD -MP -c src/tournament.c -o build/tournament.o
+gcc -Wall -Wextra -std=c17 -O2 -g build/board.o build/config.o build/game.o build/log.o build/main.o build/queue.o build/signals.o build/tournament.o -pthread -o torneo
+
+EXIT_CODE=0

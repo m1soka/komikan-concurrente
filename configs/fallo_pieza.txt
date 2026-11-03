@@ -1,0 +1,5 @@
+# Salida inesperada de la pieza del participante elegido con mutex de tablero.
+# El cleanup handler conserva exclusión mutua al notificar la anomalía.
+fail_player = 1
+fail_after_ms = 100
+fail_mode = piece_exit_locked

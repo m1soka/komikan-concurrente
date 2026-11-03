@@ -1,0 +1,9 @@
+$ ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 work/torneo-asan 1 1
+LLEGADA jugador=1 orden=1
+SIN_RIVAL jugador=1
+RESUMEN creados=1 llegados=1 partidas=0 completadas=0 pico_mesas=0 limite=1 en_cola=0
+==4844==LeakSanitizer has encountered a fatal error.
+==4844==HINT: For debugging, try setting environment variable LSAN_OPTIONS=verbosity=1:log_threads=1
+==4844==HINT: LeakSanitizer does not work under ptrace (strace, gdb, etc)
+
+EXIT_CODE=1

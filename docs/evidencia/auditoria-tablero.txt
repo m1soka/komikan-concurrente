@@ -1,0 +1,83 @@
+AUDITORIA DEL TABLERO - 2026-11-03
+Fuente: PDF oficial, secciones 2.1/2.2; inspeccion visual de su pagina 2.
+Archivos revisados: include/board.h, src/board.c, tests/test_board.c.
+
+RESULTADO DE REVISION:
+- No se detecto incumplimiento real de geometria ni reglas. No se modifica
+  include/board.h ni src/board.c: se conserva la implementacion existente.
+- board_adjacent: las 28 posiciones coinciden con los circulos del PDF.
+  Son 40 aristas de la grilla mas ocho del trono = 48 no dirigidas.
+  No hay diagonales de grilla, salto entre filas por borde, ni casilla en
+  el cruce no marcado con circulo entre las lineas 25-26 y 27-02.
+- board_init: valida 13 posiciones distintas y en rango; una entrada
+  rechazada no modifica el tablero del llamador.
+- board_moves/captured_piece/straight_jump: adyacencias libres para ambas
+  especies; solo Puma salta un Perro por dos aristas rectas consecutivas
+  hacia un destino libre. No se permiten giros, capturas de perros al Puma,
+  ocupaciones duplicadas ni movimientos de perros ya capturados.
+- board_apply: la actualizacion de ambos indices y la eliminacion de la
+  victima constituyen una operacion bajo el mutex del llamador. Este modulo
+  no toma locks y no duerme. Rechaza jugadas tras una condicion terminal.
+- board_result: seis capturas ganan para el Puma; la inmovilizacion de los
+  Perros considera tambien capturas como salida legal del Puma.
+- board_valid: coherencia celda/ficha, unicidad y conservacion de 12 perros
+  entre vivos y capturados; Puma presente exactamente una vez.
+- board_format: salida con la cuadricula y las tres posiciones del trono,
+  con truncamiento acotado y terminador NUL si la capacidad es positiva.
+
+AMBIGUEDAD CONSERVADA Y YA DOCUMENTADA EN docs/tablero.md:
+El PDF no precisa igualdad de longitud geometrica de los dos pasos de un
+salto. 07-02-27 y su inversa usan dos aristas colineales consecutivas del
+grafo, aunque el tramo central del trono es mas largo. No se inventa un
+nodo adicional en el cruce sin circulo. No hay turnos, captura obligatoria
+ni capturas encadenadas, porque el PDF no las exige.
+
+PRUEBAS FORTALECIDAS (tests/test_board.c):
+- Oraculo independiente de todos los vecinos de las 28 posiciones:
+  compara los 784 pares y no solo la cantidad total de aristas.
+- 35 rutas rectas del dibujo en ambos sentidos: 70 capturas legales,
+  incluidos los enlaces del trono, con validacion de victima e invariantes.
+- Seis capturas reales consecutivas, sin inyectar contador de capturas,
+  desde una posicion inicial completa hasta la victoria del Puma.
+- 200 disposiciones iniciales deterministas con jugadas legales y
+  comprobacion de invariantes tras cada una (el resultado exacto figura
+  en la salida de cada ejecucion).
+- Se conservan validacion de entradas, capturas prohibidas/inmovilizacion,
+  formato y 100 competencias de dos hilos por una casilla con mutex externo.
+
+ALCANCE: Las pruebas siguientes verifican este modulo. La comprobacion
+de lifecycle del juez, fallos inesperados, capacidad y SIGINT corresponde
+a otras pruebas de la auditoria. ASan se ejecuta con deteccion de fugas
+desactivada; no se presenta como prueba de ausencia de fugas.
+
+EJECUCIONES REALES:
+
+$  gcc -Wall -Wextra -std=c17 -g -D_POSIX_C_SOURCE=200809L -Iinclude -O2 tests/test_board.c src/board.c -pthread -o work/test_board_auditoria
+
+EXIT_CODE=0
+
+$  work/test_board_auditoria
+board invariantes: 200 posiciones iniciales, 39127 jugadas, 634 capturas
+board: 9 grupos OK (784 adyacencias, 70 capturas, 100 competencias por una casilla)
+
+EXIT_CODE=0
+
+$  gcc -Wall -Wextra -std=c17 -g -D_POSIX_C_SOURCE=200809L -Iinclude -O1 -fno-omit-frame-pointer -fsanitize=address,undefined tests/test_board.c src/board.c -pthread -o work/test_board_auditoria_asan
+
+EXIT_CODE=0
+
+$ ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 work/test_board_auditoria_asan
+board invariantes: 200 posiciones iniciales, 39127 jugadas, 634 capturas
+board: 9 grupos OK (784 adyacencias, 70 capturas, 100 competencias por una casilla)
+
+EXIT_CODE=0
+
+$  gcc -Wall -Wextra -std=c17 -g -D_POSIX_C_SOURCE=200809L -Iinclude -O1 -fno-omit-frame-pointer -fsanitize=thread tests/test_board.c src/board.c -pthread -o work/test_board_auditoria_tsan
+
+EXIT_CODE=0
+
+$ TSAN_OPTIONS=halt_on_error=1 work/test_board_auditoria_tsan
+board invariantes: 200 posiciones iniciales, 39127 jugadas, 634 capturas
+board: 9 grupos OK (784 adyacencias, 70 capturas, 100 competencias por una casilla)
+
+EXIT_CODE=0

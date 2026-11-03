@@ -1,0 +1,29 @@
+name: Compilar y probar
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test
+      - name: Preparar entrega
+        run: |
+          make zip
+          mkdir -p work/entrega
+          python3 -m zipfile -e komikan-concurrente.zip work/entrega
+      - uses: actions/upload-artifact@v4
+        with:
+          name: komikan-concurrente
+          path: work/entrega/
+          include-hidden-files: true
+          if-no-files-found: error
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ASan y UBSan
+        run: make asan
+      - name: Comprobar fugas en unitarios, fallos y cierre con SIGINT
+        run: |
+          ASAN_OPTIONS=detect_leaks=1 make unit
+          ASAN_OPTIONS=detect_leaks=1 python3 tests/test_integration.py --no-injection

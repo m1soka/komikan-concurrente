@@ -1,0 +1,15 @@
+/torneo
+/build/
+/work/
+/output/
+*.o
+*.d
+*.so
+*.a
+*.log
+*.tmp
+*.swp
+*~
+__pycache__/
+*.py[cod]
+/komikan-concurrente.zip

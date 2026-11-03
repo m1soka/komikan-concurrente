@@ -1,0 +1,189 @@
+$ make tsan
+make clean
+make[1]: Entering directory '/workspace/komikan-concurrente'
+rm -rf build torneo
+make[1]: Leaving directory '/workspace/komikan-concurrente'
+make CFLAGS='-Wall -Wextra -std=c17 -O1 -g -fsanitize=thread' all unit
+make[1]: Entering directory '/workspace/komikan-concurrente'
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/board.c -o build/board.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/config.c -o build/config.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/game.c -o build/game.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/log.c -o build/log.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/main.c -o build/main.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/queue.c -o build/queue.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/signals.c -o build/signals.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/tournament.c -o build/tournament.o
+gcc -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread build/board.o build/config.o build/game.o build/log.o build/main.o build/queue.o build/signals.o build/tournament.o -pthread -o torneo
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread tests/test_board.c src/board.c -pthread -o build/test_board
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread tests/test_config_queue.c src/config.c src/queue.c -pthread -o build/test_config_queue
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread tests/test_game.c src/game.c src/board.c src/config.c src/log.c -pthread -o build/test_game
+./build/test_board
+board invariantes: 200 posiciones iniciales, 39127 jugadas, 634 capturas
+board: 9 grupos OK (784 adyacencias, 70 capturas, 100 competencias por una casilla)
+./build/test_config_queue
+OK config/queue: validación estricta, overflow, transacciones y FIFO circular
+./build/test_game
+MESA inicio mesa=1 partida=1 puma=1 perros=2
+              T[27: . ]
+       [25: . ]---[26: . ]
+[00: P ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=1 ganador=2 motivo=abandono capturados=0 piezas_unidas=0
+MESA inicio mesa=1 partida=2 puma=3 perros=4
+              T[27: . ]
+       [25: . ]---[26: . ]
+[00: P ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=2 ganador=1 motivo=abandono capturados=0 piezas_unidas=0
+MESA inicio mesa=1 partida=3 puma=5 perros=6
+              T[27: . ]
+       [25: . ]---[26: . ]
+[00: P ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=3 ganador=0 motivo=SIGINT capturados=0 piezas_unidas=0
+MESA inicio mesa=1 partida=4 puma=7 perros=8
+              T[27: P ]
+       [25: . ]---[26: . ]
+[00: . ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA movimiento mesa=1 partida=4 sec=1 pieza=0 origen=27 destino=2 aceptado=1 captura=0
+              T[27: . ]
+       [25: . ]---[26: . ]
+[00: . ]-[01: . ]-[02: P ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=4 ganador=0 motivo=SIGINT capturados=0 piezas_unidas=13
+MESA inicio mesa=1 partida=5 puma=9 perros=10
+              T[27: P ]
+       [25: . ]---[26: . ]
+[00: . ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=5 ganador=2 motivo=fallo_cliente capturados=0 piezas_unidas=0
+MESA inicio mesa=1 partida=12 puma=24 perros=25
+              T[27: P ]
+       [25: . ]---[26: . ]
+[00: . ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=12 ganador=2 motivo=fallo_pieza capturados=0 piezas_unidas=13
+MESA inicio mesa=1 partida=13 puma=26 perros=27
+              T[27: P ]
+       [25: . ]---[26: . ]
+[00: . ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=13 ganador=1 motivo=fallo_pieza capturados=0 piezas_unidas=13
+MESA inicio mesa=1 partida=14 puma=28 perros=29
+              T[27: P ]
+       [25: . ]---[26: . ]
+[00: . ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=14 ganador=2 motivo=fallo_pieza capturados=0 piezas_unidas=13
+MESA inicio mesa=1 partida=15 puma=30 perros=31
+              T[27: P ]
+       [25: . ]---[26: . ]
+[00: . ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=15 ganador=1 motivo=fallo_pieza capturados=0 piezas_unidas=13
+MESA inicio mesa=1 partida=16 puma=32 perros=33
+              T[27: P ]
+       [25: . ]---[26: . ]
+[00: . ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=16 ganador=2 motivo=fallo_pieza capturados=0 piezas_unidas=13
+MESA inicio mesa=1 partida=17 puma=34 perros=35
+              T[27: P ]
+       [25: . ]---[26: . ]
+[00: . ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=17 ganador=1 motivo=fallo_pieza capturados=0 piezas_unidas=13
+test_game: juez inicializa, abandono, actividad, cleanup dentro/fuera y cancelacion diferida: OK
+make[1]: Leaving directory '/workspace/komikan-concurrente'
+python3 tests/test_integration.py --no-injection
+test_01_invalid_arguments (__main__.TournamentTests.test_01_invalid_arguments) ... ok
+test_02_invalid_configuration (__main__.TournamentTests.test_02_invalid_configuration) ... ok
+test_03_single_unpaired_client (__main__.TournamentTests.test_03_single_unpaired_client) ... ok
+test_04_one_finished_game (__main__.TournamentTests.test_04_one_finished_game) ... ok
+test_05_multiple_games_table_reuse_and_odd_client (__main__.TournamentTests.test_05_multiple_games_table_reuse_and_odd_client) ... ok
+test_06_concurrent_games_waiting_pairs_and_sigint (__main__.TournamentTests.test_06_concurrent_games_waiting_pairs_and_sigint) ... ok
+test_07_sigint_during_arrivals_before_pairing (__main__.TournamentTests.test_07_sigint_during_arrivals_before_pairing) ... ok
+test_08_abandonment (__main__.TournamentTests.test_08_abandonment) ... ok
+test_09_thread_creation_failures (__main__.TournamentTests.test_09_thread_creation_failures) ... skipped 'Inyección desactivada explícitamente'
+test_10_many_clients_fast_finishes_and_table_reuse (__main__.TournamentTests.test_10_many_clients_fast_finishes_and_table_reuse) ... ok
+test_11_sigint_one_busy_table_and_waiting_clients (__main__.TournamentTests.test_11_sigint_one_busy_table_and_waiting_clients) ... ok
+test_12_stress_four_concurrent_tables_and_sigint (__main__.TournamentTests.test_12_stress_four_concurrent_tables_and_sigint) ... ok
+test_13_previous_table_cap_is_not_an_argument_limit (__main__.TournamentTests.test_13_previous_table_cap_is_not_an_argument_limit) ... ok
+test_14_allocation_failure_is_handled (__main__.TournamentTests.test_14_allocation_failure_is_handled) ... skipped 'Agotamiento de memoria excluido de sanitizadores'
+test_15_partial_mutex_initialization_failures (__main__.TournamentTests.test_15_partial_mutex_initialization_failures) ... skipped 'Inyección desactivada explícitamente'
+test_16_sigint_during_initialization_with_deterministic_gates (__main__.TournamentTests.test_16_sigint_during_initialization_with_deterministic_gates) ... skipped 'Barreras LD_PRELOAD excluidas de sanitizadores'
+test_17_sigint_after_early_block_marker (__main__.TournamentTests.test_17_sigint_after_early_block_marker) ... ok
+test_18_sigint_with_two_hundred_clients (__main__.TournamentTests.test_18_sigint_with_two_hundred_clients) ... ok
+test_19_immediate_sigint_classifies_pre_initialization_window (__main__.TournamentTests.test_19_immediate_sigint_classifies_pre_initialization_window) ... ok
+test_20_unexpected_participant_and_piece_failures (__main__.TournamentTests.test_20_unexpected_participant_and_piece_failures) ... ok
+test_21_fifo_and_directory_configuration_are_rejected (__main__.TournamentTests.test_21_fifo_and_directory_configuration_are_rejected) ... ok
+test_22_sigint_during_configuration_loading (__main__.TournamentTests.test_22_sigint_during_configuration_loading) ... skipped 'Barreras LD_PRELOAD excluidas de sanitizadores'
+
+----------------------------------------------------------------------
+Ran 22 tests in 1.818s
+
+OK (skipped=5)
+SIGINT inmediato: previo al bloqueo=10, cierre controlado=0
+
+EXIT_CODE=0

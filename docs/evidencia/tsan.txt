@@ -1,0 +1,42 @@
+$  gcc -Wall -Wextra -std=c17 -O1 -g -fno-omit-frame-pointer -D_POSIX_C_SOURCE=200809L -Iinclude -fsanitize=thread src/board.c src/config.c src/game.c src/log.c src/main.c src/queue.c src/signals.c src/tournament.c -pthread -o work/torneo-tsan
+
+EXIT_CODE=0
+
+$ TSAN_OPTIONS=halt_on_error=1 python3 tests/test_integration.py --binary work/torneo-tsan --no-injection
+test_01_invalid_arguments (__main__.TournamentTests.test_01_invalid_arguments) ... ok
+test_02_invalid_configuration (__main__.TournamentTests.test_02_invalid_configuration) ... ok
+test_03_single_unpaired_client (__main__.TournamentTests.test_03_single_unpaired_client) ... ok
+test_04_one_finished_game (__main__.TournamentTests.test_04_one_finished_game) ... ok
+test_05_multiple_games_table_reuse_and_odd_client (__main__.TournamentTests.test_05_multiple_games_table_reuse_and_odd_client) ... ok
+test_06_concurrent_games_waiting_pairs_and_sigint (__main__.TournamentTests.test_06_concurrent_games_waiting_pairs_and_sigint) ... ok
+test_07_sigint_during_arrivals_before_pairing (__main__.TournamentTests.test_07_sigint_during_arrivals_before_pairing) ... ok
+test_08_abandonment (__main__.TournamentTests.test_08_abandonment) ... ok
+test_09_thread_creation_failures (__main__.TournamentTests.test_09_thread_creation_failures) ... skipped 'Inyección desactivada explícitamente'
+test_10_many_clients_fast_finishes_and_table_reuse (__main__.TournamentTests.test_10_many_clients_fast_finishes_and_table_reuse) ... ok
+test_11_sigint_one_busy_table_and_waiting_clients (__main__.TournamentTests.test_11_sigint_one_busy_table_and_waiting_clients) ... ok
+test_12_stress_four_concurrent_tables_and_sigint (__main__.TournamentTests.test_12_stress_four_concurrent_tables_and_sigint) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 1.092s
+
+OK (skipped=1)
+
+EXIT_CODE=0
+
+$  gcc -Wall -Wextra -std=c17 -O1 -g -fno-omit-frame-pointer -D_POSIX_C_SOURCE=200809L -Iinclude -fsanitize=thread tests/test_board.c src/board.c -pthread -o work/test_board-tsan
+
+EXIT_CODE=0
+
+$ TSAN_OPTIONS=halt_on_error=1 work/test_board-tsan
+board: 7 grupos OK (incluye 100 competencias por una casilla)
+
+EXIT_CODE=0
+
+$  gcc -Wall -Wextra -std=c17 -O1 -g -fno-omit-frame-pointer -D_POSIX_C_SOURCE=200809L -Iinclude -fsanitize=thread tests/test_config_queue.c src/config.c src/queue.c -pthread -o work/test_config_queue-tsan
+
+EXIT_CODE=0
+
+$ TSAN_OPTIONS=halt_on_error=1 work/test_config_queue-tsan
+OK config/queue: validación estricta, overflow, transacciones y FIFO circular
+
+EXIT_CODE=0

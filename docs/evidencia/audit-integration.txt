@@ -1,0 +1,28 @@
+test_01_invalid_arguments (__main__.TournamentTests.test_01_invalid_arguments) ... ok
+test_02_invalid_configuration (__main__.TournamentTests.test_02_invalid_configuration) ... ok
+test_03_single_unpaired_client (__main__.TournamentTests.test_03_single_unpaired_client) ... ok
+test_04_one_finished_game (__main__.TournamentTests.test_04_one_finished_game) ... ok
+test_05_multiple_games_table_reuse_and_odd_client (__main__.TournamentTests.test_05_multiple_games_table_reuse_and_odd_client) ... ok
+test_06_concurrent_games_waiting_pairs_and_sigint (__main__.TournamentTests.test_06_concurrent_games_waiting_pairs_and_sigint) ... ok
+test_07_sigint_during_arrivals_before_pairing (__main__.TournamentTests.test_07_sigint_during_arrivals_before_pairing) ... ok
+test_08_abandonment (__main__.TournamentTests.test_08_abandonment) ... ok
+test_09_thread_creation_failures (__main__.TournamentTests.test_09_thread_creation_failures) ... ok
+test_10_many_clients_fast_finishes_and_table_reuse (__main__.TournamentTests.test_10_many_clients_fast_finishes_and_table_reuse) ... ok
+test_11_sigint_one_busy_table_and_waiting_clients (__main__.TournamentTests.test_11_sigint_one_busy_table_and_waiting_clients) ... ok
+test_12_stress_four_concurrent_tables_and_sigint (__main__.TournamentTests.test_12_stress_four_concurrent_tables_and_sigint) ... ok
+test_13_previous_table_cap_is_not_an_argument_limit (__main__.TournamentTests.test_13_previous_table_cap_is_not_an_argument_limit) ... ok
+test_14_allocation_failure_is_handled (__main__.TournamentTests.test_14_allocation_failure_is_handled) ... ok
+test_15_partial_mutex_initialization_failures (__main__.TournamentTests.test_15_partial_mutex_initialization_failures) ... ok
+test_16_sigint_during_initialization_with_deterministic_gates (__main__.TournamentTests.test_16_sigint_during_initialization_with_deterministic_gates) ... ok
+test_17_sigint_after_early_block_marker (__main__.TournamentTests.test_17_sigint_after_early_block_marker) ... ok
+test_18_sigint_with_two_hundred_clients (__main__.TournamentTests.test_18_sigint_with_two_hundred_clients) ... ok
+test_19_immediate_sigint_classifies_pre_initialization_window (__main__.TournamentTests.test_19_immediate_sigint_classifies_pre_initialization_window) ... ok
+test_20_unexpected_participant_and_piece_failures (__main__.TournamentTests.test_20_unexpected_participant_and_piece_failures) ... ok
+test_21_fifo_and_directory_configuration_are_rejected (__main__.TournamentTests.test_21_fifo_and_directory_configuration_are_rejected) ... ok
+test_22_sigint_during_configuration_loading (__main__.TournamentTests.test_22_sigint_during_configuration_loading) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 1.464s
+
+OK
+SIGINT inmediato: previo al bloqueo=10, cierre controlado=0

@@ -1,0 +1,26 @@
+$ gcc -Wall -Wextra -std=c17 -D_POSIX_C_SOURCE=200809L -Iinclude -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined src/board.c src/config.c src/game.c src/log.c src/main.c src/queue.c src/signals.c src/tournament.c -pthread -o work/torneo-audit-lsan
+BUILD_EXIT_CODE=0
+$ ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 work/torneo-audit-lsan 2 1 configs/fallo_cliente.txt
+SERVIDOR señales_bloqueadas
+LLEGADA jugador=1 orden=1
+LLEGADA jugador=2 orden=2
+PAREJA partida=1 mesa=1 puma=1 perros=2 ordenes=1,2 activas=1
+MESA inicio mesa=1 partida=1 puma=1 perros=2
+              T[27: . ]
+       [25: . ]---[26: . ]
+[00: P ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+FALLO_CLIENTE jugador=1 tipo=pthread_exit
+MESA fin mesa=1 partida=1 ganador=2 motivo=fallo_cliente capturados=0 piezas_unidas=13
+RESULTADO partida=1 mesa=1 ganador=2 motivo=fallo_cliente
+RESUMEN creados=2 llegados=2 partidas=1 completadas=1 pico_mesas=1 limite=1 en_cola=0
+==23137==LeakSanitizer has encountered a fatal error.
+==23137==HINT: For debugging, try setting environment variable LSAN_OPTIONS=verbosity=1:log_threads=1
+==23137==HINT: LeakSanitizer does not work under ptrace (strace, gdb, etc)
+
+EXIT_CODE=1
