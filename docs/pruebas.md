@@ -104,9 +104,16 @@ El workflow actualizado ejecuta `make test`, ASan/UBSan y, fuera del trazador
 local, `ASAN_OPTIONS=detect_leaks=1 make unit` más la integración compatible con
 LSan activo. Publica `komikan-concurrente.zip` como artefacto. El estado de la
 revisión exacta se comprueba en el [PR #1](https://github.com/m1soka/komikan-concurrente/pull/1);
-la mera presencia del YAML no constituye evidencia de éxito. La consulta y
-resultado de CI de la revisión se incorporan en `evidencia/audit-ci.txt` cuando
-se completa la ejecución, identificando el commit que se probó.
+la mera presencia del YAML no constituye evidencia de éxito.
+
+La ejecución de auditoría [41739284629](https://github.com/m1soka/komikan-concurrente/actions/runs/41739284629),
+commit `4a986a1ce9a2ef3aba3f8bb3d96bda22840fd313`, terminó con **success**.
+Pasaron los jobs `test` y `sanitizers`, incluida la comprobación con
+`detect_leaks=1` sobre unitarios y los 17 grupos de integración compatibles.
+No hubo reportes de fugas en esos escenarios remotos. La consulta de jobs y
+pasos está en `evidencia/audit-ci.txt`. Incorporar esta evidencia modifica
+documentación e inventario, sin cambiar el código ya probado. La comprobación
+final del PR y del artefacto también se enlaza en su descripción.
 
 Para reproducir fuera de un depurador/trazador:
 

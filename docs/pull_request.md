@@ -29,8 +29,9 @@ Validación local ejecutada:
 
 LeakSanitizer local no puede verificar fugas bajo ptrace. El workflow actualizado
 lo ejecuta en Ubuntu sobre unitarios e integración compatible, incluidos fallos
-y SIGINT; su commit y resultado se verifican en Actions antes de cerrar la
-auditoría. No se promete recuperación de SIGSEGV, SIGKILL, corrupción, cancelación
+y SIGINT; la ejecución 41739284629 del commit de correcciones
+4a986a1ce9a2ef3aba3f8bb3d96bda22840fd313 terminó con success en ambos jobs,
+incluidos unitarios e integración compatible con LeakSanitizer activo. No se promete recuperación de SIGSEGV, SIGKILL, corrupción, cancelación
 asíncrona ni cantidades ilimitadas de hilos. `docs/pruebas.md` separa resultados,
 omisiones y límites.
 

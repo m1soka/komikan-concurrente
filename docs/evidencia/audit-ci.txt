@@ -1,0 +1,122 @@
+{
+  "commit": "4a986a1ce9a2ef3aba3f8bb3d96bda22840fd313",
+  "run_id": 41739284629,
+  "url": "https://github.com/m1soka/komikan-concurrente/actions/runs/41739284629",
+  "workflow": {
+    "workflow_runs": [
+      {
+        "id": 41739284629,
+        "name": "Compilar y probar",
+        "status": "completed",
+        "conclusion": "success",
+        "run_number": 6,
+        "jobs_url": "https://api.github.com/repos/m1soka/komikan-concurrente/actions/runs/41739284629/jobs",
+        "logs_url": "https://api.github.com/repos/m1soka/komikan-concurrente/actions/runs/41739284629/logs",
+        "workflow_id": 406296665
+      }
+    ]
+  },
+  "jobs": {
+    "jobs": [
+      {
+        "id": 126276417703,
+        "name": "sanitizers",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 41739284629,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "ASan y UBSan",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Comprobar fugas en unitarios, fallos y cierre con SIGINT",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9
+          }
+        ]
+      },
+      {
+        "id": 126276418037,
+        "name": "test",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 41739284629,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Run make test",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Preparar entrega",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Run actions/upload-artifact@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11
+          }
+        ]
+      }
+    ]
+  },
+  "note": "Esta ejecución prueba las correcciones de código de la auditoría. La incorporación posterior de esta evidencia solo modifica documentación e inventario."
+}

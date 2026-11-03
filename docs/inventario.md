@@ -19,6 +19,7 @@ docs/evidencia/asan-make.txt
 docs/evidencia/asan.txt
 docs/evidencia/audit-asan.txt
 docs/evidencia/audit-build.txt
+docs/evidencia/audit-ci.txt
 docs/evidencia/audit-integration.txt
 docs/evidencia/audit-lsan.txt
 docs/evidencia/audit-natural-final.txt

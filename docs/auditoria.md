@@ -217,3 +217,13 @@ bloqueo y ninguna como cierre controlado en esa tanda. Las pruebas que esperan
 el marcador de bloqueo y las barreras deterministas son las que comprueban el
 cierre dentro del mecanismo de la aplicación. Se conservan ambos resultados sin
 presentar la ventana previa como un fallo recuperable por el programa.
+
+## Verificación remota
+
+GitHub Actions [41739284629](https://github.com/m1soka/komikan-concurrente/actions/runs/41739284629)
+probó el commit de correcciones `4a986a1ce9a2ef3aba3f8bb3d96bda22840fd313`: ambos
+jobs terminaron con success, incluido LeakSanitizer activo sobre unitarios y
+integración compatible. Se conserva la consulta de jobs/pasos en
+`evidencia/audit-ci.txt`. Esto supera la restricción local de ptrace para esos
+escenarios, sin certificar todos los interleavings o fallos posibles. La entrega
+final incorpora esta evidencia y mantiene el mismo código fuente probado.
