@@ -1,0 +1,8 @@
+# Retardos oficiales, en milisegundos. Se pueden omitir claves para usar defaults.
+min_delay_ms = 50
+max_delay_ms = 300
+seed = 2026
+# Cuadrícula: nodo = fila * 5 + columna, filas y columnas 0..4.
+# Trono: 25 = izquierda, 26 = derecha, 27 = ápice T.
+puma = 0
+dogs = 13,14,15,16,17,18,19,20,21,22,23,24

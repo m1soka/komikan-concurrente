@@ -1,0 +1,90 @@
+$ make tsan
+make clean
+make[1]: Entering directory '/workspace/komikan-concurrente'
+rm -rf build torneo
+make[1]: Leaving directory '/workspace/komikan-concurrente'
+make CFLAGS='-Wall -Wextra -std=c17 -O1 -g -fsanitize=thread' all unit
+make[1]: Entering directory '/workspace/komikan-concurrente'
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/board.c -o build/board.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/config.c -o build/config.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/game.c -o build/game.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/log.c -o build/log.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/main.c -o build/main.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/queue.c -o build/queue.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/signals.c -o build/signals.o
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread -pthread -MMD -MP -c src/tournament.c -o build/tournament.o
+gcc -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread build/board.o build/config.o build/game.o build/log.o build/main.o build/queue.o build/signals.o build/tournament.o -pthread -o torneo
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread tests/test_board.c src/board.c -pthread -o build/test_board
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread tests/test_config_queue.c src/config.c src/queue.c -pthread -o build/test_config_queue
+gcc -D_POSIX_C_SOURCE=200809L -Iinclude -Wall -Wextra -std=c17 -O1 -g -fsanitize=thread tests/test_game.c src/game.c src/board.c src/config.c src/log.c -pthread -o build/test_game
+./build/test_board
+board: 7 grupos OK (incluye 100 competencias por una casilla)
+./build/test_config_queue
+OK config/queue: validación estricta, overflow, transacciones y FIFO circular
+./build/test_game
+MESA inicio mesa=1 partida=1 puma=1 perros=2
+              T[27: . ]
+       [25: . ]---[26: . ]
+[00: P ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=1 ganador=2 motivo=abandono capturados=0 piezas_unidas=0
+MESA inicio mesa=1 partida=2 puma=3 perros=4
+              T[27: . ]
+       [25: . ]---[26: . ]
+[00: P ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=2 ganador=1 motivo=abandono capturados=0 piezas_unidas=0
+MESA inicio mesa=1 partida=3 puma=5 perros=6
+              T[27: . ]
+       [25: . ]---[26: . ]
+[00: P ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=3 ganador=0 motivo=SIGINT capturados=0 piezas_unidas=0
+MESA inicio mesa=1 partida=4 puma=7 perros=8
+              T[27: P ]
+       [25: . ]---[26: . ]
+[00: . ]-[01: . ]-[02: . ]-[03: . ]-[04: . ]
+[05: . ]-[06: . ]-[07: . ]-[08: . ]-[09: . ]
+[10: . ]-[11: . ]-[12: . ]-[13:D01]-[14:D02]
+[15:D03]-[16:D04]-[17:D05]-[18:D06]-[19:D07]
+[20:D08]-[21:D09]-[22:D10]-[23:D11]-[24:D12]
+capturados=0
+
+MESA fin mesa=1 partida=4 ganador=0 motivo=SIGINT capturados=0 piezas_unidas=13
+test_game: abandono, reutilizacion, cierre y actividad: OK
+make[1]: Leaving directory '/workspace/komikan-concurrente'
+python3 tests/test_integration.py --no-injection
+test_01_invalid_arguments (__main__.TournamentTests.test_01_invalid_arguments) ... ok
+test_02_invalid_configuration (__main__.TournamentTests.test_02_invalid_configuration) ... ok
+test_03_single_unpaired_client (__main__.TournamentTests.test_03_single_unpaired_client) ... ok
+test_04_one_finished_game (__main__.TournamentTests.test_04_one_finished_game) ... ok
+test_05_multiple_games_table_reuse_and_odd_client (__main__.TournamentTests.test_05_multiple_games_table_reuse_and_odd_client) ... ok
+test_06_concurrent_games_waiting_pairs_and_sigint (__main__.TournamentTests.test_06_concurrent_games_waiting_pairs_and_sigint) ... ok
+test_07_sigint_during_arrivals_before_pairing (__main__.TournamentTests.test_07_sigint_during_arrivals_before_pairing) ... ok
+test_08_abandonment (__main__.TournamentTests.test_08_abandonment) ... ok
+test_09_thread_creation_failures (__main__.TournamentTests.test_09_thread_creation_failures) ... skipped 'Inyección desactivada explícitamente'
+test_10_many_clients_fast_finishes_and_table_reuse (__main__.TournamentTests.test_10_many_clients_fast_finishes_and_table_reuse) ... ok
+test_11_sigint_one_busy_table_and_waiting_clients (__main__.TournamentTests.test_11_sigint_one_busy_table_and_waiting_clients) ... ok
+test_12_stress_four_concurrent_tables_and_sigint (__main__.TournamentTests.test_12_stress_four_concurrent_tables_and_sigint) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 1.082s
+
+OK (skipped=1)
+
+EXIT_CODE=0

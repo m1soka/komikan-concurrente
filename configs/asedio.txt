@@ -1,0 +1,6 @@
+# Victoria inmediata de Perros: todos los escapes y saltos de Puma bloqueados.
+min_delay_ms = 50
+max_delay_ms = 50
+seed = 1
+puma = 0
+dogs = 1,2,5,10,25,27,13,14,15,16,17,18

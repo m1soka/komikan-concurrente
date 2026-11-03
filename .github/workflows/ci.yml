@@ -1,0 +1,16 @@
+name: Compilar y probar
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ASan y UBSan
+        run: make asan
+      - name: Comprobar fugas en escenario de cierre normal
+        run: ASAN_OPTIONS=detect_leaks=1 ./torneo 100 4 configs/asedio.txt > /dev/null

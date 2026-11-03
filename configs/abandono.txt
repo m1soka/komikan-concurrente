@@ -1,0 +1,6 @@
+# Un cliente cooperativamente falla en una partida: no se cancelan hilos.
+min_delay_ms = 50
+max_delay_ms = 300
+seed = 2026
+fail_player = 1
+fail_after_ms = 100
